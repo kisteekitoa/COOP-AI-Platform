@@ -1,0 +1,6 @@
+@COOPAI.API_HostAddress = http://localhost:5171
+
+GET {{COOPAI.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
