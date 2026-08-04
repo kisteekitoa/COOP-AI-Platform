@@ -9,80 +9,86 @@ namespace COOPAI.API.Models;
 /// </summary>
 public class LoanContract : BaseEntity
 {
-    /// <summary>
-    /// เลขที่สัญญา
-    /// </summary>
+    #region Contract
+
     [Required]
     [MaxLength(30)]
     public string ContractNo { get; set; } = string.Empty;
 
-    /// <summary>
-    /// สมาชิกผู้กู้
-    /// </summary>
-    public int MemberId { get; set; }
-
-    [ForeignKey(nameof(MemberId))]
-    public virtual Member? Member { get; set; }
-
-    /// <summary>
-    /// ประเภทสินเชื่อ
-    /// </summary>
-    public int LoanTypeId { get; set; }
-
-    [ForeignKey(nameof(LoanTypeId))]
-    public virtual LoanType? LoanType { get; set; }
-
-    /// <summary>
-    /// วันที่ทำสัญญา
-    /// </summary>
     public DateTime ContractDate { get; set; }
 
-    /// <summary>
-    /// วันครบกำหนด
-    /// </summary>
     public DateTime? ExpireDate { get; set; }
 
-    /// <summary>
-    /// วงเงินกู้
-    /// </summary>
+    public bool IsClosed { get; set; }
+
+    #endregion
+
+    #region Member
+
+    public int MemberId { get; set; }
+
+    public virtual Member? Member { get; set; }
+
+    #endregion
+
+    #region Loan Type
+
+    public int LoanTypeId { get; set; }
+
+    public virtual LoanType? LoanType { get; set; }
+
+    #endregion
+
+    #region Financial
+
     [Column(TypeName = "decimal(18,2)")]
     public decimal LoanAmount { get; set; }
 
-    /// <summary>
-    /// เงินต้นคงเหลือ
-    /// </summary>
     [Column(TypeName = "decimal(18,2)")]
     public decimal PrincipalBalance { get; set; }
 
-    /// <summary>
-    /// กำไรค้างรับ
-    /// </summary>
     [Column(TypeName = "decimal(18,2)")]
     public decimal ProfitBalance { get; set; }
 
-    /// <summary>
-    /// ยอดหนี้รวม
-    /// </summary>
     [Column(TypeName = "decimal(18,2)")]
     public decimal TotalBalance { get; set; }
 
-    /// <summary>
-    /// จำนวนวันค้างชำระ
-    /// </summary>
+    #endregion
+
+    #region Collection
+
+    public int InstallmentCount { get; set; }
+
+    public int PaidInstallmentCount { get; set; }
+
     public int OverdueDays { get; set; }
 
-    /// <summary>
-    /// ปิดสัญญาแล้วหรือไม่
-    /// </summary>
-    public bool IsClosed { get; set; } = false;
+    public DateTime? LastPaymentDate { get; set; }
 
-    // -------------------------
-    // Navigation Properties
-    // -------------------------
+    #endregion
+
+    #region Follow Up
+
+    public DateTime? LastFollowUpDate { get; set; }
+
+    [MaxLength(200)]
+    public string? LastFollowUpRemark { get; set; }
+
+    #endregion
+
+    #region Assignment
+
+    public int? AssignedOfficerId { get; set; }
+
+    #endregion
+
+    #region Navigation
+
+    public virtual ICollection<LoanPayment> LoanPayments { get; set; }
+        = new List<LoanPayment>();
 
     public virtual ICollection<Guarantor> Guarantors { get; set; }
         = new List<Guarantor>();
 
-    public virtual ICollection<LoanPayment> LoanPayments { get; set; }
-        = new List<LoanPayment>();
+    #endregion
 }

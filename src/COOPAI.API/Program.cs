@@ -1,23 +1,43 @@
 using COOPAI.API.Data;
+using COOPAI.API.Services.Import;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Database
+#region Services
+
 builder.Services.AddDbContext<CoopDbContext>(options =>
     options.UseSqlServer(
         builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Controllers
 builder.Services.AddControllers();
 
-// Swagger
+// Import Engine
+builder.Services.AddScoped<IExcelImportService, ExcelImportService>();
+
 builder.Services.AddEndpointsApiExplorer();
+
 builder.Services.AddSwaggerGen();
-Console.WriteLine(typeof(COOPAI.API.Data.CoopDbContext).FullName);
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend", policy =>
+    {
+        policy
+            .AllowAnyOrigin()
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
+
+builder.Services.AddHealthChecks();
+
+#endregion
+
 var app = builder.Build();
 
-// Configure HTTP pipeline
+#region Middleware
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -26,6 +46,12 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.UseCors("AllowFrontend");
+
 app.MapControllers();
+
+app.MapHealthChecks("/health");
+
+#endregion
 
 app.Run();
