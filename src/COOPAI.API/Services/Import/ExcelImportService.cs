@@ -86,38 +86,35 @@ public class ExcelImportService : IExcelImportService
                     continue;
 
                 var loan = new LoanImportRow
-                {
-                    RowNo = r + 1,
+{
+    MemberNo = GetString(row, 1),
 
-                    MemberNo = GetString(row, 1),
+    FullName = GetString(row, 2),
 
-                    MemberName = GetString(row, 2),
+    ContractNo = GetString(row, 3),
 
-                    ContractNo = GetString(row, 3),
+    ContractDate = GetDate(row, 4),
 
-                    LoanDate = GetDate(row, 4),
+    ExpireDate = GetDate(row, 5),
 
-                    ExpireDate = GetDate(row, 5),
+    PrincipalBalance = GetDecimal(row, 6),
 
-                    Principal = GetDecimal(row, 6),
+    ProfitBalance = GetDecimal(row, 7),
 
-                    Profit = GetDecimal(row, 7),
+    TotalBalance = GetDecimal(row, 8)
+};
 
-                    Total = GetDecimal(row, 8)
-                };
-
-                var preview = new Dictionary<string, string>
-                {
-                    ["Row"] = loan.RowNo.ToString(),
-                    ["MemberNo"] = loan.MemberNo,
-                    ["MemberName"] = loan.MemberName,
-                    ["ContractNo"] = loan.ContractNo,
-                    ["LoanDate"] = loan.LoanDate?.ToString("dd/MM/yyyy") ?? "",
-                    ["ExpireDate"] = loan.ExpireDate?.ToString("dd/MM/yyyy") ?? "",
-                    ["Principal"] = loan.Principal.ToString("N2"),
-                    ["Profit"] = loan.Profit.ToString("N2"),
-                    ["Total"] = loan.Total.ToString("N2")
-                };
+var preview = new Dictionary<string, string>
+{
+    ["MemberNo"] = loan.MemberNo,
+    ["MemberName"] = loan.FullName,
+    ["ContractNo"] = loan.ContractNo,
+    ["LoanDate"] = loan.ContractDate?.ToString("dd/MM/yyyy") ?? "",
+    ["ExpireDate"] = loan.ExpireDate?.ToString("dd/MM/yyyy") ?? "",
+    ["Principal"] = loan.PrincipalBalance.ToString("N2"),
+    ["Profit"] = loan.ProfitBalance.ToString("N2"),
+    ["Total"] = loan.TotalBalance.ToString("N2")
+};
 
                 result.PreviewRows.Add(preview);
 

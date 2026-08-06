@@ -1,8 +1,0 @@
-D:\Projects\COOP-AI\src\COOPAI.API\obj\Debug\net8.0\COOPAI.API.csproj.AssemblyReference.cache
-D:\Projects\COOP-AI\src\COOPAI.API\obj\Debug\net8.0\COOPAI.API.GeneratedMSBuildEditorConfig.editorconfig
-D:\Projects\COOP-AI\src\COOPAI.API\obj\Debug\net8.0\COOPAI.API.AssemblyInfoInputs.cache
-D:\Projects\COOP-AI\src\COOPAI.API\obj\Debug\net8.0\COOPAI.API.AssemblyInfo.cs
-D:\Projects\COOP-AI\src\COOPAI.API\obj\Debug\net8.0\COOPAI.API.csproj.CoreCompileInputs.cache
-D:\Projects\COOP-AI\src\COOPAI.API\obj\Debug\net8.0\COOPAI.API.MvcApplicationPartsAssemblyInfo.cs
-D:\Projects\COOP-AI\src\COOPAI.API\obj\Debug\net8.0\COOPAI.API.MvcApplicationPartsAssemblyInfo.cache
-D:\Projects\COOP-AI\src\COOPAI.API\obj\Debug\net8.0\COOPAI.API.sourcelink.json

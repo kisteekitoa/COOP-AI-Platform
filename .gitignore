@@ -1,14 +1,16 @@
-# OS files
-.DS_Store
-Thumbs.db
+# Build
+bin/
+obj/
 
-# Editors
+# Visual Studio
+.vs/
+
+# VS Code
 .vscode/
-.idea/
 
-# Environment
-.env
-.env.*
+# User files
+*.user
+*.suo
 
 # Logs
 *.log
