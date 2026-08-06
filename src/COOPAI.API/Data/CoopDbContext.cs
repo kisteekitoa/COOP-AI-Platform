@@ -1,4 +1,5 @@
 using COOPAI.API.Models;
+using COOPAI.API.Models.Import;
 using Microsoft.EntityFrameworkCore;
 
 namespace COOPAI.API.Data;
@@ -34,6 +35,8 @@ public class CoopDbContext : DbContext
 
     public DbSet<ImportLog> ImportLogs => Set<ImportLog>();
 
+    public DbSet<ImportLoanRecord> ImportLoanRecords => Set<ImportLoanRecord>();
+
     #endregion
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -51,6 +54,8 @@ public class CoopDbContext : DbContext
         ConfigureLoanType(modelBuilder);
 
         ConfigureImport(modelBuilder);
+
+        ConfigureImportLoanRecord(modelBuilder);
     }
 
     #region Entity Configuration
@@ -93,6 +98,18 @@ public class CoopDbContext : DbContext
 
     private static void ConfigureImport(ModelBuilder builder)
     {
+    }
+
+    private static void ConfigureImportLoanRecord(ModelBuilder builder)
+    {
+        builder.Entity<ImportLoanRecord>()
+            .HasIndex(x => x.BatchId);
+
+        builder.Entity<ImportLoanRecord>()
+            .HasIndex(x => x.MemberNo);
+
+        builder.Entity<ImportLoanRecord>()
+            .HasIndex(x => x.ContractNo);
     }
 
     #endregion

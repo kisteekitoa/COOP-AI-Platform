@@ -2,7 +2,7 @@
 // COOP-AI
 // File        : ExcelReader.cs
 // Module      : Loan Import
-// Version     : 0.1.001
+// Version     : 0.2.000
 // Description : Read Excel File
 // ==========================================================
 
@@ -30,9 +30,13 @@ public class ExcelReader
         {
             ConfigureDataTable = _ => new ExcelDataTableConfiguration
             {
-                UseHeaderRow = false
+                // ใช้แถวแรกเป็น Header
+                UseHeaderRow = true
             }
         });
+
+        if (dataSet.Tables.Count == 0)
+            throw new Exception("Excel file contains no worksheet.");
 
         return dataSet.Tables[0];
     }

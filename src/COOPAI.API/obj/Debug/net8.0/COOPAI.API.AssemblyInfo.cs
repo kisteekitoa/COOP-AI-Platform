@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("COOPAI.API")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+4873c69f89507f91ab69e02ab2789db8cf4416f0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+3e76b3a3f656835b4e3908cba6c113fcbb0089e3")]
 [assembly: System.Reflection.AssemblyProductAttribute("COOPAI.API")]
 [assembly: System.Reflection.AssemblyTitleAttribute("COOPAI.API")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
