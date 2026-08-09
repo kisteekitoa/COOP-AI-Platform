@@ -19,6 +19,8 @@ public class ImportResult
 
     public int FailedRows { get; set; }
 
+    public int? BatchId { get; set; }
+
     public List<string> Errors { get; set; } = new();
 
     // ชื่อคอลัมน์ทั้งหมดจาก Excel

@@ -43,6 +43,10 @@ public class ImportLoanRecord
     [MaxLength(30)]
     public string ContractNo { get; set; } = string.Empty;
 
+    public DateTime? ContractDate { get; set; }
+
+    public DateTime? ExpireDate { get; set; }
+
     // ===============================
     // Financial
     // ===============================

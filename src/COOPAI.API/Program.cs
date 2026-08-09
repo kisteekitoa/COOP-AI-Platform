@@ -1,4 +1,5 @@
 using COOPAI.API.Data;
+using COOPAI.API.Services.Dashboard;
 using COOPAI.API.Services.Import;
 using Microsoft.EntityFrameworkCore;
 
@@ -13,7 +14,14 @@ builder.Services.AddDbContext<CoopDbContext>(options =>
 builder.Services.AddControllers();
 
 // Import Engine
+builder.Services.AddScoped<ExcelReader>();
+builder.Services.AddScoped<ImportValidator>();
+builder.Services.AddScoped<MemberImporter>();
+builder.Services.AddScoped<LoanImporter>();
 builder.Services.AddScoped<IExcelImportService, ExcelImportService>();
+
+// Dashboard
+builder.Services.AddScoped<IDashboardService, DashboardService>();
 
 builder.Services.AddEndpointsApiExplorer();
 
