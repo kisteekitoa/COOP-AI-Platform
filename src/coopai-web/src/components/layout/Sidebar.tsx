@@ -11,15 +11,15 @@ import {
 } from "lucide-react";
 
 const menus = [
-    { icon: LayoutDashboard, title: "Dashboard" },
-    { icon: Users, title: "สมาชิก" },
-    { icon: Wallet, title: "สินเชื่อ" },
-    { icon: Landmark, title: "เงินฝาก" },
-    { icon: ShieldCheck, title: "ผู้ค้ำประกัน" },
-    { icon: FileSpreadsheet, title: "Import Excel" },
-    { icon: BarChart3, title: "รายงาน" },
-    { icon: Bot, title: "AI Assistant" },
-    { icon: Settings, title: "ตั้งค่า" },
+    { icon: LayoutDashboard, title: "Dashboard", path: "/" },
+    { icon: Users, title: "สมาชิก", path: "/members" },
+    { icon: Wallet, title: "สินเชื่อ", path: "/loans" },
+    { icon: Landmark, title: "เงินฝาก", path: "/savings" },
+    { icon: ShieldCheck, title: "ผู้ค้ำประกัน", path: "/guarantors" },
+    { icon: FileSpreadsheet, title: "Import Excel", path: "/import" },
+    { icon: BarChart3, title: "รายงาน", path: "/reports" },
+    { icon: Bot, title: "AI Assistant", path: "/assistant" },
+    { icon: Settings, title: "ตั้งค่า", path: "/settings" },
 ];
 
 export default function Sidebar() {
@@ -48,6 +48,12 @@ export default function Sidebar() {
 
                         <button
                             key={item.title}
+                            type="button"
+                            onClick={() => {
+                                if (item.path) {
+                                    window.location.href = item.path;
+                                }
+                            }}
                             className="flex items-center w-full gap-4 px-6 py-3 hover:bg-green-700 transition"
                         >
 

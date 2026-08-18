@@ -9,18 +9,26 @@
 using System.Collections.Generic;
 using System.Data;
 using System.IO;
+using System.Security.Cryptography;
 using System.Threading.Tasks;
 using COOPAI.API.Data;
 using COOPAI.API.Models;
 using COOPAI.API.Models.Import;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace COOPAI.API.Services.Import;
 
 public class ExcelImportService : IExcelImportService
 {
+    private static readonly HashSet<string> SkippableValidationErrorTypes = new(StringComparer.Ordinal)
+    {
+        "Negative",
+        "TotalBalanceMismatch"
+    };
+
     private readonly ExcelReader _reader;
     private readonly ImportValidator _validator;
-    private readonly MemberImporter _memberImporter;
     private readonly LoanImporter _loanImporter;
     private readonly CoopDbContext _dbContext;
 
@@ -28,13 +36,11 @@ public class ExcelImportService : IExcelImportService
         CoopDbContext dbContext,
         ExcelReader reader,
         ImportValidator validator,
-        MemberImporter memberImporter,
         LoanImporter loanImporter)
     {
         _dbContext = dbContext;
         _reader = reader;
         _validator = validator;
-        _memberImporter = memberImporter;
         _loanImporter = loanImporter;
     }
 
@@ -45,92 +51,18 @@ public class ExcelImportService : IExcelImportService
         try
         {
             //-------------------------------------------------
-            // Read Excel
+            // Read Excel rows directly from EPPlus
             //-------------------------------------------------
 
-            DataTable table = _reader.Read(filePath);
-
-            //-------------------------------------------------
-            // Scan Worksheet
-            //-------------------------------------------------
-
-            var rows = new WorksheetScanner().Scan(table);
+            var previewData = _reader.ReadPreviewRows(filePath, 20);
 
             result.Success = true;
-            result.TotalRows = rows.Count;
+            result.TotalRows = previewData.TotalRows;
             result.ImportedRows = 0;
             result.UpdatedRows = 0;
             result.FailedRows = 0;
-
-            //-------------------------------------------------
-            // Information
-            //-------------------------------------------------
-
-            result.Headers.Add($"Rows : {rows.Count}");
-            result.Headers.Add($"Columns : {table.Columns.Count}");
-
-            //-------------------------------------------------
-            // Excel Header
-            //-------------------------------------------------
-
-            if (rows.Count >= 5)
-            {
-                for (int c = 0; c < table.Columns.Count; c++)
-                {
-                    string h1 = rows[3].Count > c ? rows[3][c] : "";
-                    string h2 = rows[4].Count > c ? rows[4][c] : "";
-
-                    result.Headers.Add($"{h1} {h2}".Trim());
-                }
-            }
-
-            //-------------------------------------------------
-            // Data Start
-            // Excel Row 7
-            //-------------------------------------------------
-
-            const int DATA_START_ROW = 6;
-
-            for (int r = DATA_START_ROW; r < rows.Count; r++)
-            {
-                var row = rows[r];
-
-                if (row.Count < 9)
-                    continue;
-
-                if (string.IsNullOrWhiteSpace(row[1]))
-                    continue;
-
-                var loan = new LoanImportRow
-                {
-                    MemberNo = GetString(row, 1),
-                    FullName = GetString(row, 2),
-                    ContractNo = GetString(row, 3),
-                    ContractDate = GetDate(row, 4),
-                    ExpireDate = GetDate(row, 5),
-                    PrincipalBalance = GetDecimal(row, 6),
-                    ProfitBalance = GetDecimal(row, 7),
-                    TotalBalance = GetDecimal(row, 8)
-                };
-
-                var preview = new Dictionary<string, string>
-                {
-                    ["MemberNo"] = loan.MemberNo,
-                    ["MemberName"] = loan.FullName,
-                    ["ContractNo"] = loan.ContractNo,
-                    ["LoanDate"] = loan.ContractDate?.ToString("dd/MM/yyyy") ?? "",
-                    ["ExpireDate"] = loan.ExpireDate?.ToString("dd/MM/yyyy") ?? "",
-                    ["Principal"] = loan.PrincipalBalance.ToString("N2"),
-                    ["Profit"] = loan.ProfitBalance.ToString("N2"),
-                    ["Total"] = loan.TotalBalance.ToString("N2")
-                };
-
-                result.PreviewRows.Add(preview);
-                result.ImportedRows++;
-
-                if (result.PreviewRows.Count >= 20)
-                    break;
-            }
+            result.Headers = previewData.Headers;
+            result.PreviewRows = previewData.Rows;
         }
         catch (Exception ex)
         {
@@ -141,94 +73,337 @@ public class ExcelImportService : IExcelImportService
         return result;
     }
 
-    public async Task<ImportResult> ImportAsync(string filePath)
+    public async Task<ImportResult> ValidateOnlyAsync(string filePath)
     {
         var result = new ImportResult();
-        var logs = new List<ImportLog>();
-        var batch = new ImportBatch
-        {
-            FileName = Path.GetFileName(filePath),
-            ImportDate = DateTime.UtcNow,
-            Status = "Pending"
-        };
-
-        var batchId = Guid.NewGuid();
 
         try
         {
+            result.FileHash = await ComputeFileHashAsync(filePath);
             var records = _reader.ReadRecords(filePath);
             result.TotalRows = records.Count;
 
+            var validActiveRecords = new List<ImportLoanRecord>();
+
             foreach (var record in records)
             {
+                var validation = _validator.Validate(record);
+
+                if (validation.IsSkipped)
+                {
+                    result.SkippedRows++;
+                    result.SkipDetails.Add(new ImportSkipDetail
+                    {
+                        RowNumber = record.RowNo,
+                        ContractNo = record.ContractNo,
+                        MemberName = record.MemberName,
+                        Status = validation.Status,
+                        Message = "Skipped because both previous and current principal balances are blank."
+                    });
+                    continue;
+                }
+
+                if (!validation.IsValid)
+                {
+                    var canSkipRow = AreAllValidationErrorsSkippable(validation);
+                    result.FailedRows++;
+                    result.Errors.AddRange(validation.Errors);
+                    result.ErrorDetails.AddRange(validation.Details.Select(detail => CreateImportError(record, detail, canSkipRow)));
+                    continue;
+                }
+
+                result.ValidRows++;
+                validActiveRecords.Add(record);
+            }
+
+            if (validActiveRecords.Count > 0)
+            {
+                var existingContractNos = await _dbContext.LoanContracts
+                    .AsNoTracking()
+                    .Select(contract => contract.ContractNo)
+                    .ToListAsync();
+
+                var normalizedExistingContractNos = existingContractNos
+                    .Select(NormalizeContractNo)
+                    .ToHashSet(StringComparer.Ordinal);
+
+                foreach (var record in validActiveRecords)
+                {
+                    if (normalizedExistingContractNos.Contains(NormalizeContractNo(record.ContractNo)))
+                    {
+                        result.ExistingContracts++;
+                        result.UpdateCandidates++;
+                        continue;
+                    }
+
+                    result.MissingContracts++;
+                    var message = $"LoanContract '{record.ContractNo.Trim()}' was not found and cannot be updated.";
+                    result.Errors.Add(message);
+                    result.ErrorDetails.Add(new ImportError
+                    {
+                        RowNumber = record.RowNo,
+                        ContractNo = record.ContractNo,
+                        MemberNo = record.MemberNo,
+                        MemberName = record.MemberName,
+                        FieldName = "ContractNo",
+                        RawValue = record.ContractNo,
+                        ParsedValue = record.ContractNo.Trim(),
+                        ErrorType = "ContractNotFound",
+                        ErrorMessage = $"Row {record.RowNo}: {message}"
+                    });
+                }
+            }
+
+            result.Success = result.FailedRows == 0 && result.MissingContracts == 0;
+        }
+        catch (Exception ex)
+        {
+            result.Success = false;
+            result.Errors.Add(ex.Message);
+        }
+
+        return result;
+    }
+
+    public async Task<ImportResult> ImportAsync(string filePath, ImportExecutionOptions? options = null)
+    {
+        var result = new ImportResult();
+        var logs = new List<ImportLog>();
+        IDbContextTransaction? transaction = null;
+
+        try
+        {
+            result.FileHash = await ComputeFileHashAsync(filePath);
+            var approvedSkipIdentities = BuildApprovedSkipIdentities(options?.ApprovedErrorSkips);
+
+            if (approvedSkipIdentities.Count > 0 &&
+                !string.Equals(options?.ValidationFileHash, result.FileHash, StringComparison.OrdinalIgnoreCase))
+            {
+                AddValidationFileHashMismatch(result);
+                return result;
+            }
+
+            var records = _reader.ReadRecords(filePath);
+            result.TotalRows = records.Count;
+            var updateRecords = await PreflightAsync(records, result, logs, approvedSkipIdentities);
+
+            if (result.FailedRows > 0 || result.MissingContracts > 0)
+            {
+                result.Success = false;
+                return result;
+            }
+
+            transaction = await _dbContext.Database.BeginTransactionAsync();
+
+            var batch = new ImportBatch
+            {
+                FileName = Path.GetFileName(filePath),
+                ImportDate = DateTime.UtcNow,
+                Status = "Completed"
+            };
+            var batchId = Guid.NewGuid();
+
+            foreach (var record in updateRecords)
+            {
                 record.BatchId = batchId;
-                await ProcessRecordAsync(record, result, logs);
+                _dbContext.ImportLoanRecords.Add(record);
+
+                var loanResult = await _loanImporter.ImportAsync(record);
+                if (loanResult.Status == LoanImportStatus.ContractNotFound)
+                {
+                    result.ExistingContracts--;
+                    result.UpdateCandidates--;
+                    AddContractNotFoundFailure(record, result, logs, loanResult.ErrorMessage);
+                    throw new InvalidOperationException(
+                        $"LoanContract '{record.ContractNo.Trim()}' became unavailable after import preflight.");
+                }
+
+                record.IsValid = true;
+                record.ErrorMessage = string.Empty;
+                result.UpdatedRows++;
+                logs.Add(CreateLog(record.RowNo, "Info", $"Updated contract {loanResult.Contract!.ContractNo}"));
             }
 
             batch.TotalRecords = result.TotalRows;
             batch.SuccessRecords = result.ImportedRows + result.UpdatedRows;
-            batch.FailedRecords = result.FailedRows;
-            batch.Status = result.Errors.Any() ? "CompletedWithErrors" : "Completed";
-            batch.ErrorMessage = result.Errors.Count > 0 ? string.Join("; ", result.Errors) : null;
+            batch.FailedRecords = 0;
             batch.ImportLogs = logs;
 
             _dbContext.ImportBatches.Add(batch);
             await _dbContext.SaveChangesAsync();
+            await transaction.CommitAsync();
 
             result.BatchId = batch.Id;
-            result.Success = !result.Errors.Any();
+            result.Success = true;
         }
         catch (Exception ex)
         {
-            result.Success = false;
-            result.Errors.Add(ex.Message);
+            var rollbackSucceeded = false;
+            Exception? rollbackException = null;
 
-            batch.Status = "Failed";
-            batch.ErrorMessage = ex.Message;
-            batch.ImportLogs = logs;
-            _dbContext.ImportBatches.Add(batch);
-            await _dbContext.SaveChangesAsync();
+            if (transaction != null)
+            {
+                try
+                {
+                    await transaction.RollbackAsync();
+                    rollbackSucceeded = true;
+                }
+                catch (Exception rollbackEx)
+                {
+                    rollbackException = rollbackEx;
+                }
+            }
+
+            _dbContext.ChangeTracker.Clear();
+            result.Success = false;
+            result.BatchId = null;
+            result.ImportedRows = 0;
+            result.UpdatedRows = 0;
+
+            var errorType = transaction == null
+                ? "ImportFailedBeforeTransaction"
+                : rollbackSucceeded
+                    ? "ImportTransactionRolledBack"
+                    : "ImportRollbackFailed";
+            var message = transaction == null
+                ? $"Import failed before database persistence began. No import changes were committed. {ex.Message}"
+                : rollbackSucceeded
+                    ? $"Import transaction was rolled back. No import changes were committed. {ex.Message}"
+                    : $"Import failed and rollback also failed. Database state must be verified. {ex.Message}; rollback: {rollbackException!.Message}";
+
+            result.Errors.Add(message);
+            result.ErrorDetails.Add(new ImportError
+            {
+                ErrorType = errorType,
+                ErrorMessage = message,
+                CanSkip = false
+            });
+        }
+        finally
+        {
+            if (transaction != null)
+                await transaction.DisposeAsync();
         }
 
         return result;
     }
 
-    private async Task ProcessRecordAsync(ImportLoanRecord record, ImportResult result, List<ImportLog> logs)
+    private async Task<List<ImportLoanRecord>> PreflightAsync(
+        IReadOnlyCollection<ImportLoanRecord> records,
+        ImportResult result,
+        List<ImportLog> logs,
+        HashSet<ErrorSkipIdentity> approvedSkipIdentities)
     {
-        var validation = _validator.Validate(record);
+        var validActiveRecords = new List<ImportLoanRecord>();
 
-        if (!validation.IsValid)
+        foreach (var record in records)
         {
-            record.IsValid = false;
-            record.ErrorMessage = string.Join("; ", validation.Errors);
-            _dbContext.ImportLoanRecords.Add(record);
-            logs.Add(CreateLog(record.RowNo, "Error", $"Validation failed: {record.ErrorMessage}"));
-            result.FailedRows++;
-            result.Errors.AddRange(validation.Errors);
-            await _dbContext.SaveChangesAsync();
-            return;
+            var validation = _validator.Validate(record);
+
+            if (validation.IsSkipped)
+            {
+                result.SkippedRows++;
+                result.SkipDetails.Add(new ImportSkipDetail
+                {
+                    RowNumber = record.RowNo,
+                    ContractNo = record.ContractNo,
+                    MemberName = record.MemberName,
+                    Status = validation.Status,
+                    Message = "ข้ามรายการเนื่องจากไม่พบเงินต้นคงเหลือทั้งปีก่อนหน้าและปีปัจจุบัน"
+                });
+                logs.Add(CreateLog(record.RowNo, "Info", $"Skipped inactive contract {record.ContractNo}"));
+                continue;
+            }
+
+            if (!validation.IsValid)
+            {
+                var canSkipRow = AreAllValidationErrorsSkippable(validation);
+                var errorDetails = validation.Details
+                    .Select(detail => CreateImportError(record, detail, canSkipRow))
+                    .ToList();
+
+                if (IsUserApprovedErrorSkip(record, validation, approvedSkipIdentities))
+                {
+                    foreach (var error in errorDetails)
+                        error.WasUserSkipped = true;
+
+                    result.UserSkippedErrorRows++;
+                    result.ErrorDetails.AddRange(errorDetails);
+                    result.UserSkippedErrorDetails.Add(new UserSkippedErrorDetail
+                    {
+                        RowNumber = record.RowNo,
+                        ContractNo = record.ContractNo,
+                        MemberNo = record.MemberNo,
+                        MemberName = record.MemberName,
+                        OriginalErrors = errorDetails
+                    });
+                    logs.Add(CreateLog(record.RowNo, "Warning", $"User approved validation-error skip for {record.ContractNo}"));
+                    continue;
+                }
+
+                logs.Add(CreateLog(record.RowNo, "Error", $"Validation failed: {string.Join("; ", validation.Errors)}"));
+                result.FailedRows++;
+                result.Errors.AddRange(validation.Errors);
+                result.ErrorDetails.AddRange(errorDetails);
+                continue;
+            }
+
+            result.ValidRows++;
+            validActiveRecords.Add(record);
         }
 
-        _dbContext.ImportLoanRecords.Add(record);
+        if (validActiveRecords.Count == 0)
+            return validActiveRecords;
 
-        var member = await _memberImporter.ImportAsync(record);
-        var loanResult = await _loanImporter.ImportAsync(record, member);
+        var existingContractNos = await _dbContext.LoanContracts
+            .AsNoTracking()
+            .Select(contract => contract.ContractNo)
+            .ToListAsync();
+        var normalizedExistingContractNos = existingContractNos
+            .Select(NormalizeContractNo)
+            .ToHashSet(StringComparer.Ordinal);
 
-        record.IsValid = true;
-        record.ErrorMessage = string.Empty;
-
-        if (loanResult.IsUpdated)
+        foreach (var record in validActiveRecords)
         {
-            result.UpdatedRows++;
-            logs.Add(CreateLog(record.RowNo, "Info", $"Updated contract {loanResult.Contract.ContractNo}"));
-        }
-        else
-        {
-            result.ImportedRows++;
-            logs.Add(CreateLog(record.RowNo, "Info", $"Imported contract {loanResult.Contract.ContractNo}"));
+            if (normalizedExistingContractNos.Contains(NormalizeContractNo(record.ContractNo)))
+            {
+                result.ExistingContracts++;
+                result.UpdateCandidates++;
+                continue;
+            }
+
+            AddContractNotFoundFailure(
+                record,
+                result,
+                logs,
+                $"LoanContract '{record.ContractNo.Trim()}' was not found and cannot be updated.");
         }
 
-        await _dbContext.SaveChangesAsync();
+        return validActiveRecords;
+    }
+
+    private static void AddContractNotFoundFailure(
+        ImportLoanRecord record,
+        ImportResult result,
+        List<ImportLog> logs,
+        string message)
+    {
+        result.MissingContracts++;
+        result.FailedRows++;
+        result.Errors.Add(message);
+        result.ErrorDetails.Add(new ImportError
+        {
+            RowNumber = record.RowNo,
+            ContractNo = record.ContractNo,
+            MemberNo = record.MemberNo,
+            MemberName = record.MemberName,
+            FieldName = "ContractNo",
+            RawValue = record.ContractNo,
+            ParsedValue = record.ContractNo.Trim(),
+            ErrorType = "ContractNotFound",
+            ErrorMessage = $"แถว {record.RowNo}: {message}"
+        });
+        logs.Add(CreateLog(record.RowNo, "Warning", message));
     }
 
     private static ImportLog CreateLog(int rowNumber, string level, string message)
@@ -239,6 +414,90 @@ public class ExcelImportService : IExcelImportService
             Level = level,
             Message = message
         };
+    }
+
+    private static ImportError CreateImportError(
+        ImportLoanRecord record,
+        ValidationError detail,
+        bool canSkipRow)
+    {
+        return new ImportError
+        {
+            RowNumber = record.RowNo,
+            ContractNo = record.ContractNo,
+            MemberNo = record.MemberNo,
+            MemberName = record.MemberName,
+            FieldName = detail.FieldName,
+            RawValue = detail.RawValue,
+            ParsedValue = detail.ParsedValue,
+            ErrorType = detail.ErrorType,
+            CanSkip = canSkipRow,
+            SuggestedAction = canSkipRow ? GetSuggestedAction(detail.ErrorType) : string.Empty,
+            ErrorMessage = $"แถว {record.RowNo}: {detail.Message}"
+        };
+    }
+
+    private static bool IsUserApprovedErrorSkip(
+        ImportLoanRecord record,
+        ValidationResult validation,
+        HashSet<ErrorSkipIdentity> approvedSkipIdentities)
+    {
+        if (!approvedSkipIdentities.Contains(ErrorSkipIdentity.Create(record.RowNo, record.ContractNo)))
+            return false;
+
+        return AreAllValidationErrorsSkippable(validation);
+    }
+
+    private static bool AreAllValidationErrorsSkippable(ValidationResult validation) =>
+        validation.Details.Count > 0 &&
+        validation.Details.All(detail => SkippableValidationErrorTypes.Contains(detail.ErrorType));
+
+    private static HashSet<ErrorSkipIdentity> BuildApprovedSkipIdentities(
+        IReadOnlyCollection<ApprovedErrorSkipSelection>? selections)
+    {
+        if (selections == null || selections.Count == 0)
+            return new HashSet<ErrorSkipIdentity>();
+
+        return selections
+            .Select(selection => ErrorSkipIdentity.Create(selection.RowNumber, selection.ContractNo))
+            .ToHashSet();
+    }
+
+    private static async Task<string> ComputeFileHashAsync(string filePath)
+    {
+        await using var stream = File.OpenRead(filePath);
+        var hash = await SHA256.HashDataAsync(stream);
+        return Convert.ToHexString(hash);
+    }
+
+    private static void AddValidationFileHashMismatch(ImportResult result)
+    {
+        const string message = "The uploaded file does not match the file that was validated. Error-skip approvals were not applied.";
+        result.Success = false;
+        result.Errors.Add(message);
+        result.ErrorDetails.Add(new ImportError
+        {
+            FieldName = "ValidationFileHash",
+            ErrorType = "ValidationFileHashMismatch",
+            ErrorMessage = message,
+            CanSkip = false
+        });
+    }
+
+    private static string GetSuggestedAction(string errorType) => errorType switch
+    {
+        "Negative" => "แก้ไข Excel หรือข้ามรายการ",
+        "TotalBalanceMismatch" => "ตรวจสอบยอดรวมใน Excel หรือข้ามรายการ",
+        _ => string.Empty
+    };
+
+    private static string NormalizeContractNo(string? contractNo) =>
+        (contractNo ?? string.Empty).Trim().ToLowerInvariant();
+
+    private readonly record struct ErrorSkipIdentity(int RowNumber, string ContractNo)
+    {
+        public static ErrorSkipIdentity Create(int rowNumber, string? contractNo) =>
+            new(rowNumber, NormalizeContractNo(contractNo));
     }
 
     private static string GetString(List<string> row, int index)

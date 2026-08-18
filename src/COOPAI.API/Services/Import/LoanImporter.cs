@@ -1,8 +1,8 @@
 using System;
 using System.Threading.Tasks;
 using COOPAI.API.Data;
-using COOPAI.API.Models;
 using COOPAI.API.Models.Import;
+using COOPAI.API.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace COOPAI.API.Services.Import;
@@ -16,91 +16,94 @@ public class LoanImporter
         _dbContext = dbContext;
     }
 
-    public async Task<LoanImportResult> ImportAsync(ImportLoanRecord record, Member member)
+    public virtual async Task<LoanImportResult> ImportAsync(ImportLoanRecord record)
     {
         if (record == null)
             throw new ArgumentNullException(nameof(record));
 
-        if (member == null)
-            throw new ArgumentNullException(nameof(member));
-
         if (string.IsNullOrWhiteSpace(record.ContractNo))
             throw new ArgumentException("ContractNo is required.", nameof(record));
 
-        var contractNo = record.ContractNo.Trim();
-
-        var lowerContractNo = contractNo.ToLowerInvariant();
+        var normalizedContractNo = NormalizeContractNo(record.ContractNo);
 
         var existingContract = await _dbContext.LoanContracts
-            .FirstOrDefaultAsync(x => x.ContractNo.ToLower() == lowerContractNo);
+            .FirstOrDefaultAsync(x => x.ContractNo.Trim().ToLower() == normalizedContractNo);
 
-        if (existingContract != null)
+        if (existingContract == null)
         {
-            existingContract.LoanAmount = record.LoanAmount;
-            existingContract.PrincipalBalance = record.PrincipalBalance;
-            existingContract.ProfitBalance = record.ProfitBalance;
-            existingContract.TotalBalance = record.TotalBalance;
-            existingContract.OverdueDays = record.OverdueDays;
-
-            if (record.ContractDate.HasValue)
-                existingContract.ContractDate = record.ContractDate.Value;
-
-            existingContract.ExpireDate = record.ExpireDate;
-
-            _dbContext.LoanContracts.Update(existingContract);
-            await _dbContext.SaveChangesAsync();
-
             return new LoanImportResult
             {
-                Contract = existingContract,
-                IsUpdated = true
+                Status = LoanImportStatus.ContractNotFound,
+                ErrorType = "ContractNotFound",
+                ErrorMessage = $"LoanContract '{record.ContractNo.Trim()}' was not found and was not updated."
             };
         }
 
-        var loanType = await _dbContext.LoanTypes.FirstOrDefaultAsync();
-        if (loanType == null)
-        {
-            loanType = new LoanType
-            {
-                Code = "DEFAULT",
-                Name = "Default Loan Type",
-                IsActive = true
-            };
+        var balances = GetValidatedActiveBalances(record);
 
-            _dbContext.LoanTypes.Add(loanType);
-            await _dbContext.SaveChangesAsync();
-        }
-
-        var newContract = new LoanContract
-        {
-            ContractNo = contractNo,
-            LoanTypeId = loanType.Id,
-            MemberId = member.Id,
-            Member = member,
-            ContractDate = record.ContractDate ?? DateTime.UtcNow,
-            ExpireDate = record.ExpireDate,
-            LoanAmount = record.LoanAmount,
-            PrincipalBalance = record.PrincipalBalance,
-            ProfitBalance = record.ProfitBalance,
-            TotalBalance = record.TotalBalance,
-            OverdueDays = record.OverdueDays,
-            IsClosed = false
-        };
-
-        _dbContext.LoanContracts.Add(newContract);
-        await _dbContext.SaveChangesAsync();
+        existingContract.PrincipalBalance = NormalizeMoney(balances.Principal);
+        existingContract.ProfitBalance = NormalizeMoney(balances.Profit);
+        existingContract.TotalBalance = NormalizeMoney(balances.Total);
 
         return new LoanImportResult
         {
-            Contract = newContract,
-            IsUpdated = false
+            Contract = existingContract,
+            Status = LoanImportStatus.Updated
         };
     }
+
+    private static string NormalizeContractNo(string contractNo) =>
+        contractNo.Trim().ToLowerInvariant();
+
+    private static ActiveBalances GetValidatedActiveBalances(ImportLoanRecord record)
+    {
+        var previousActive = IsParsed(record.PreviousPrincipalParseStatus, record.PreviousPrincipalParsedValue);
+        var currentActive = IsParsed(record.CurrentPrincipalParseStatus, record.CurrentPrincipalParsedValue);
+
+        if (previousActive == currentActive)
+            throw new InvalidOperationException("ImportLoanRecord must have exactly one validated active balance side.");
+
+        if (previousActive)
+        {
+            return new ActiveBalances(
+                RequireValue(record.PreviousPrincipalParsedValue, "PreviousPrincipal"),
+                record.PreviousProfitParsedValue ?? 0m,
+                RequireValue(record.PreviousTotalParsedValue, "PreviousTotal"));
+        }
+
+        return new ActiveBalances(
+            RequireValue(record.CurrentPrincipalParsedValue, "CurrentPrincipal"),
+            record.CurrentProfitParsedValue ?? 0m,
+            RequireValue(record.CurrentTotalParsedValue, "CurrentTotal"));
+    }
+
+    private static bool IsParsed(string status, decimal? value) =>
+        status == "Parsed" && value.HasValue;
+
+    private static decimal RequireValue(decimal? value, string fieldName) =>
+        value ?? throw new InvalidOperationException($"Validated field {fieldName} has no value.");
+
+    private static decimal NormalizeMoney(decimal value) =>
+        decimal.Round(value, 2, MidpointRounding.AwayFromZero);
+
+    private readonly record struct ActiveBalances(decimal Principal, decimal Profit, decimal Total);
+}
+
+public enum LoanImportStatus
+{
+    Updated,
+    ContractNotFound
 }
 
 public class LoanImportResult
 {
-    public LoanContract Contract { get; set; } = null!;
+    public LoanContract? Contract { get; set; }
 
-    public bool IsUpdated { get; set; }
+    public LoanImportStatus Status { get; set; }
+
+    public bool IsUpdated => Status == LoanImportStatus.Updated;
+
+    public string ErrorType { get; set; } = string.Empty;
+
+    public string ErrorMessage { get; set; } = string.Empty;
 }

@@ -54,20 +54,146 @@ public class ImportLoanRecord
     [Column(TypeName = "decimal(18,2)")]
     public decimal LoanAmount { get; set; }
 
+    [NotMapped]
+    public string LoanAmountRaw { get; set; } = string.Empty;
+
+    [NotMapped]
+    public decimal? LoanAmountParsedValue { get; set; }
+
+    [NotMapped]
+    public string LoanAmountParseStatus { get; set; } = string.Empty;
+
     [Column(TypeName = "decimal(18,2)")]
     public decimal PrincipalBalance { get; set; }
+
+    [NotMapped]
+    public string PrincipalBalanceRaw { get; set; } = string.Empty;
+
+    [NotMapped]
+    public decimal? PrincipalBalanceParsedValue { get; set; }
+
+    [NotMapped]
+    public string PrincipalBalanceParseStatus { get; set; } = string.Empty;
 
     [Column(TypeName = "decimal(18,2)")]
     public decimal ProfitBalance { get; set; }
 
+    [NotMapped]
+    public string ProfitBalanceRaw { get; set; } = string.Empty;
+
+    [NotMapped]
+    public decimal? ProfitBalanceParsedValue { get; set; }
+
+    [NotMapped]
+    public string ProfitBalanceParseStatus { get; set; } = string.Empty;
+
     [Column(TypeName = "decimal(18,2)")]
     public decimal TotalBalance { get; set; }
+
+    [NotMapped]
+    public string TotalBalanceRaw { get; set; } = string.Empty;
+
+    [NotMapped]
+    public decimal? TotalBalanceParsedValue { get; set; }
+
+    [NotMapped]
+    public string TotalBalanceParseStatus { get; set; } = string.Empty;
+
+    [NotMapped]
+    public decimal? PreviousPrincipal { get; set; }
+
+    [NotMapped]
+    public string PreviousPrincipalRaw { get; set; } = string.Empty;
+
+    [NotMapped]
+    public decimal? PreviousPrincipalParsedValue { get; set; }
+
+    [NotMapped]
+    public string PreviousPrincipalParseStatus { get; set; } = string.Empty;
+
+    [NotMapped]
+    public decimal? PreviousProfit { get; set; }
+
+    [NotMapped]
+    public string PreviousProfitRaw { get; set; } = string.Empty;
+
+    [NotMapped]
+    public decimal? PreviousProfitParsedValue { get; set; }
+
+    [NotMapped]
+    public string PreviousProfitParseStatus { get; set; } = string.Empty;
+
+    [NotMapped]
+    public decimal? PreviousProfitUnderlyingNumericValue { get; set; }
+
+    [NotMapped]
+    public string PreviousProfitNumberFormat { get; set; } = string.Empty;
+
+    [NotMapped]
+    public string PreviousProfitBusinessStatus { get; set; } = string.Empty;
+
+    [NotMapped]
+    public decimal? PreviousTotal { get; set; }
+
+    [NotMapped]
+    public string PreviousTotalRaw { get; set; } = string.Empty;
+
+    [NotMapped]
+    public decimal? PreviousTotalParsedValue { get; set; }
+
+    [NotMapped]
+    public string PreviousTotalParseStatus { get; set; } = string.Empty;
+
+    [NotMapped]
+    public decimal? CurrentPrincipal { get; set; }
+
+    [NotMapped]
+    public string CurrentPrincipalRaw { get; set; } = string.Empty;
+
+    [NotMapped]
+    public decimal? CurrentPrincipalParsedValue { get; set; }
+
+    [NotMapped]
+    public string CurrentPrincipalParseStatus { get; set; } = string.Empty;
+
+    [NotMapped]
+    public decimal? CurrentProfit { get; set; }
+
+    [NotMapped]
+    public string CurrentProfitRaw { get; set; } = string.Empty;
+
+    [NotMapped]
+    public decimal? CurrentProfitParsedValue { get; set; }
+
+    [NotMapped]
+    public string CurrentProfitParseStatus { get; set; } = string.Empty;
+
+    [NotMapped]
+    public decimal? CurrentTotal { get; set; }
+
+    [NotMapped]
+    public string CurrentTotalRaw { get; set; } = string.Empty;
+
+    [NotMapped]
+    public decimal? CurrentTotalParsedValue { get; set; }
+
+    [NotMapped]
+    public string CurrentTotalParseStatus { get; set; } = string.Empty;
 
     // ===============================
     // Collection
     // ===============================
 
     public int OverdueDays { get; set; }
+
+    [NotMapped]
+    public string OverdueDaysRaw { get; set; } = string.Empty;
+
+    [NotMapped]
+    public int? OverdueDaysParsedValue { get; set; }
+
+    [NotMapped]
+    public string OverdueDaysParseStatus { get; set; } = string.Empty;
 
     // ===============================
     // Validation
