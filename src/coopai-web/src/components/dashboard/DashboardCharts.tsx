@@ -3,86 +3,114 @@ import type { ApexOptions } from "apexcharts";
 
 import Card from "../ui/Card";
 import SectionTitle from "../ui/SectionTitle";
+import type { DashboardContractTypeDto } from "../../services/dashboardService";
 
-const chartOptions: ApexOptions = {
-    chart: {
-        toolbar: {
-            show: false,
-        },
-        zoom: {
-            enabled: false,
-        },
-    },
-    stroke: {
-        curve: "smooth",
-        width: 3,
-    },
-    dataLabels: {
-        enabled: false,
-    },
-    xaxis: {
-        categories: [
-            "ม.ค.",
-            "ก.พ.",
-            "มี.ค.",
-            "เม.ย.",
-            "พ.ค.",
-            "มิ.ย.",
-        ],
-    },
-    grid: {
-        borderColor: "#E2E8F0",
-    },
+type Props = {
+    contractTypes: DashboardContractTypeDto[];
 };
 
-const loanSeries = [
-    {
-        name: "สินเชื่อ",
-        data: [302, 306, 309, 312, 319, 327],
-    },
-];
+const numberFormatter = new Intl.NumberFormat("th-TH");
+const moneyFormatter = new Intl.NumberFormat("th-TH", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+});
 
-const depositSeries = [
-    {
-        name: "เงินฝาก",
-        data: [430, 441, 452, 466, 474, 485],
-    },
-];
+function createChartOptions(categories: string[], formatValue: (value: number) => string): ApexOptions {
+    return {
+        chart: {
+            toolbar: {
+                show: false,
+            },
+            zoom: {
+                enabled: false,
+            },
+        },
+        colors: ["#047857"],
+        dataLabels: {
+            enabled: false,
+        },
+        grid: {
+            borderColor: "#E2E8F0",
+        },
+        plotOptions: {
+            bar: {
+                borderRadius: 4,
+                barHeight: "58%",
+                horizontal: true,
+            },
+        },
+        tooltip: {
+            y: {
+                formatter: formatValue,
+            },
+        },
+        xaxis: {
+            categories,
+            labels: {
+                formatter: formatValue,
+            },
+        },
+        yaxis: {
+            labels: {
+                maxWidth: 360,
+            },
+        },
+    };
+}
 
-export default function DashboardCharts() {
+export default function DashboardCharts({ contractTypes }: Props) {
+    const categories = contractTypes.map(
+        (contractType) => `${contractType.prefix} — ${contractType.name}`
+    );
+    const contractCountOptions = createChartOptions(
+        categories,
+        (value) => numberFormatter.format(value)
+    );
+    const balanceOptions = createChartOptions(
+        categories,
+        (value) => `${moneyFormatter.format(value)} บาท`
+    );
+    const contractCountSeries = [{
+        name: "จำนวนสัญญา",
+        data: contractTypes.map((contractType) => contractType.contractCount),
+    }];
+    const balanceSeries = [{
+        name: "ยอดคงเหลือรวม",
+        data: contractTypes.map((contractType) => contractType.totalBalance),
+    }];
+    const chartHeight = Math.max(360, contractTypes.length * 72);
+
+    if (contractTypes.length === 0) {
+        return (
+            <Card>
+                <p className="text-center text-slate-500">ไม่พบข้อมูลประเภทสินเชื่อสำหรับสร้างกราฟ</p>
+            </Card>
+        );
+    }
+
     return (
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-
+        <div className="grid grid-cols-1 gap-6">
             <Card>
-
-                <SectionTitle
-                    title="แนวโน้มสินเชื่อ"
-                />
+                <SectionTitle title="จำนวนสัญญาตามประเภทสินเชื่อ" />
 
                 <Chart
-                    options={chartOptions}
-                    series={loanSeries}
-                    type="line"
-                    height={320}
+                    options={contractCountOptions}
+                    series={contractCountSeries}
+                    type="bar"
+                    height={chartHeight}
                 />
-
             </Card>
 
             <Card>
-
-                <SectionTitle
-                    title="แนวโน้มเงินฝาก"
-                />
+                <SectionTitle title="ยอดคงเหลือตามประเภทสินเชื่อ" />
 
                 <Chart
-                    options={chartOptions}
-                    series={depositSeries}
-                    type="area"
-                    height={320}
+                    options={balanceOptions}
+                    series={balanceSeries}
+                    type="bar"
+                    height={chartHeight}
                 />
-
             </Card>
-
         </div>
     );
 }
