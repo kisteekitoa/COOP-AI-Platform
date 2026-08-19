@@ -4,6 +4,7 @@ using COOPAI.API.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace COOPAI.API.Migrations
 {
     [DbContext(typeof(CoopDbContext))]
-    partial class CoopDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260819023205_AddPortfolioSnapshotV11")]
+    partial class AddPortfolioSnapshotV11
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -553,13 +556,6 @@ namespace COOPAI.API.Migrations
                         .HasPrecision(19, 2)
                         .HasColumnType("decimal(19,2)");
 
-                    b.Property<DateTime?>("RejectedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("RejectionReason")
-                        .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
-
                     b.Property<int>("Revision")
                         .HasColumnType("int");
 
@@ -639,9 +635,6 @@ namespace COOPAI.API.Migrations
                     b.HasIndex("SourceType", "SourceFileHash");
 
                     b.HasIndex("Status", "AsOfDate");
-
-                    b.HasIndex("SourceFileHash", "AsOfDate", "DefinitionVersion", "SnapshotContentHash")
-                        .IsUnique();
 
                     b.ToTable("PortfolioSnapshots");
                 });
@@ -766,9 +759,6 @@ namespace COOPAI.API.Migrations
                         .IsRequired()
                         .HasMaxLength(24)
                         .HasColumnType("nvarchar(24)");
-
-                    b.Property<int>("SourceRowNumber")
-                        .HasColumnType("int");
 
                     b.Property<string>("TermStatus")
                         .IsRequired()

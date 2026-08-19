@@ -1,0 +1,48 @@
+namespace COOPAI.API.Services.PortfolioSnapshots;
+
+public sealed record PortfolioSnapshotAcceptanceBaseline(
+    DateOnly AsOfDate,
+    int TotalSourceRows,
+    int TotalContractCount,
+    int PlaceholderRowCount,
+    int MatchedCanonicalCount,
+    int MissingCanonicalCount,
+    int UnresolvedMemberContractCount,
+    int WarningRecordCount,
+    int ShadowExcludedCount,
+    int InTermContractCount,
+    int ExpiredContractCount,
+    int OutstandingContractCount,
+    int PaidOffContractCount,
+    int InTermOutstandingContractCount,
+    int InTermPaidOffContractCount,
+    int ExpiredOutstandingContractCount,
+    int ExpiredPaidOffContractCount,
+    decimal ExpiredOutstandingTotal,
+    PortfolioFinancialValues Opening,
+    PortfolioFinancialValues Repayment,
+    PortfolioFinancialValues Outstanding)
+{
+    public static PortfolioSnapshotAcceptanceBaseline June2026 { get; } = new(
+        new DateOnly(2026, 6, 30),
+        5_084,
+        4_454,
+        630,
+        4_447,
+        7,
+        7,
+        8,
+        327,
+        2_559,
+        1_895,
+        3_897,
+        557,
+        2_394,
+        165,
+        1_503,
+        392,
+        46_520_515.00m,
+        new PortfolioFinancialValues(253_800_384.15m, 93_412_854.85m, 347_213_239.00m),
+        new PortfolioFinancialValues(34_253_000.60m, 8_344_017.40m, 42_597_018.00m),
+        new PortfolioFinancialValues(219_547_383.55m, 85_068_837.45m, 304_616_221.00m));
+}

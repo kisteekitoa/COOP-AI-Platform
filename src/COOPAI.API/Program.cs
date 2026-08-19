@@ -1,6 +1,7 @@
 using COOPAI.API.Data;
 using COOPAI.API.Services.Dashboard;
 using COOPAI.API.Services.Import;
+using COOPAI.API.Services.PortfolioSnapshots;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -22,6 +23,10 @@ builder.Services.AddScoped<IExcelImportService, ExcelImportService>();
 
 // Dashboard
 builder.Services.AddScoped<IDashboardService, DashboardService>();
+
+// Portfolio Snapshot review workflow (publishing remains disabled)
+builder.Services.AddScoped<IPortfolioSnapshotSource, ExcelPortfolioSnapshotSource>();
+builder.Services.AddScoped<IPortfolioSnapshotWorkflowService, PortfolioSnapshotWorkflowService>();
 
 builder.Services.AddEndpointsApiExplorer();
 
@@ -63,3 +68,5 @@ app.MapHealthChecks("/health");
 #endregion
 
 app.Run();
+
+public partial class Program;

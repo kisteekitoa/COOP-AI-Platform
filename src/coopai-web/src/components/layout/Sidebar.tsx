@@ -7,7 +7,8 @@ import {
     FileSpreadsheet,
     BarChart3,
     Bot,
-    Settings
+    Settings,
+    ClipboardCheck
 } from "lucide-react";
 
 const menus = [
@@ -17,6 +18,7 @@ const menus = [
     { icon: Landmark, title: "เงินฝาก", path: "/savings" },
     { icon: ShieldCheck, title: "ผู้ค้ำประกัน", path: "/guarantors" },
     { icon: FileSpreadsheet, title: "Import Excel", path: "/import" },
+    { icon: ClipboardCheck, title: "ตรวจทาน Snapshot", path: "/portfolio-snapshots" },
     { icon: BarChart3, title: "รายงาน", path: "/reports" },
     { icon: Bot, title: "AI Assistant", path: "/assistant" },
     { icon: Settings, title: "ตั้งค่า", path: "/settings" },
