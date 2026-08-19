@@ -1,8 +1,10 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 
+import ProtectedRoute from "../auth/ProtectedRoute";
 import MainLayout from "../layouts/MainLayout";
 import DashboardPage from "../pages/DashboardPage";
 import ImportPage from "../pages/ImportPage";
+import LoginPage from "../pages/LoginPage";
 import PortfolioSnapshotsPage from "../pages/PortfolioSnapshotsPage";
 
 export default function AppRouter() {
@@ -10,8 +12,10 @@ export default function AppRouter() {
         <BrowserRouter>
 
             <Routes>
+                <Route path="/login" element={<LoginPage />} />
 
-                <Route element={<MainLayout />}>
+                <Route element={<ProtectedRoute />}>
+                    <Route element={<MainLayout />}>
 
                     <Route
                         path="/"
@@ -30,6 +34,7 @@ export default function AppRouter() {
                         element={<PortfolioSnapshotsPage />}
                     />
 
+                    </Route>
                 </Route>
 
             </Routes>

@@ -1,11 +1,14 @@
 using COOPAI.API.Models;
+using COOPAI.API.Models.Auth;
 using COOPAI.API.Models.Import;
 using COOPAI.API.Models.Portfolio;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace COOPAI.API.Data;
 
-public class CoopDbContext : DbContext
+public class CoopDbContext : IdentityDbContext<CoopUser, IdentityRole<int>, int>
 {
     public CoopDbContext(DbContextOptions<CoopDbContext> options)
         : base(options)
@@ -68,6 +71,8 @@ public class CoopDbContext : DbContext
 
         ConfigureImportLoanRecord(modelBuilder);
 
+        ConfigureAuthentication(modelBuilder);
+
         ConfigurePortfolioSnapshot(modelBuilder);
     }
 
@@ -123,6 +128,17 @@ public class CoopDbContext : DbContext
 
         builder.Entity<ImportLoanRecord>()
             .HasIndex(x => x.ContractNo);
+    }
+
+    private static void ConfigureAuthentication(ModelBuilder builder)
+    {
+        builder.Entity<CoopUser>()
+            .Property(x => x.DisplayName)
+            .HasMaxLength(200);
+
+        builder.Entity<CoopUser>()
+            .Property(x => x.IsEnabled)
+            .HasDefaultValue(true);
     }
 
     private static void ConfigurePortfolioSnapshot(ModelBuilder builder)

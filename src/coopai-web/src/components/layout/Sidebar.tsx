@@ -8,8 +8,14 @@ import {
     BarChart3,
     Bot,
     Settings,
-    ClipboardCheck
+    ClipboardCheck,
+    LogOut,
+    UserRound
 } from "lucide-react";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+
+import { useAuth } from "../../auth/useAuth";
 
 const menus = [
     { icon: LayoutDashboard, title: "Dashboard", path: "/" },
@@ -25,6 +31,20 @@ const menus = [
 ];
 
 export default function Sidebar() {
+    const { user, logout } = useAuth();
+    const navigate = useNavigate();
+    const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+    async function handleLogout() {
+        setIsLoggingOut(true);
+        try {
+            await logout();
+            navigate("/login", { replace: true });
+        } finally {
+            setIsLoggingOut(false);
+        }
+    }
+
     return (
         <aside className="w-64 bg-green-800 text-white h-screen flex flex-col shadow-xl">
 
@@ -70,6 +90,25 @@ export default function Sidebar() {
                 })}
 
             </nav>
+
+            <div className="border-t border-green-700 p-4">
+                <div className="flex items-center gap-3 rounded-xl bg-green-900/50 px-3 py-3">
+                    <UserRound aria-hidden="true" size={20} className="shrink-0 text-green-200" />
+                    <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold">{user?.displayName || user?.userName}</p>
+                        <p className="truncate text-xs text-green-200">{user?.roles.join(", ") || "ไม่มีบทบาท"}</p>
+                    </div>
+                </div>
+                <button
+                    type="button"
+                    disabled={isLoggingOut}
+                    onClick={() => void handleLogout()}
+                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-green-600 px-4 py-2 text-sm font-medium transition hover:bg-green-700 disabled:opacity-50"
+                >
+                    <LogOut aria-hidden="true" size={18} />
+                    {isLoggingOut ? "กำลังออกจากระบบ..." : "ออกจากระบบ"}
+                </button>
+            </div>
 
         </aside>
     );
