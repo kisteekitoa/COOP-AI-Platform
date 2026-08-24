@@ -1,12 +1,13 @@
 using COOPAI.API.DTOs.Dashboard;
 using COOPAI.API.Services.Dashboard;
+using COOPAI.API.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace COOPAI.API.Controllers;
 
 [ApiController]
-[Authorize]
+[Authorize(Policy = CoopPolicies.AuthenticatedUser)]
 [Route("api/dashboard")]
 public class DashboardController : ControllerBase
 {

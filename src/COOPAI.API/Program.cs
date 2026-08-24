@@ -6,10 +6,17 @@ using COOPAI.API.Services.Dashboard;
 using COOPAI.API.Services.Import;
 using COOPAI.API.Services.PortfolioSnapshots;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
+
+ProductionSecurityConfiguration.ValidateProductionHostAndCors(builder.Environment, builder.Configuration);
+ProductionSecurityConfiguration.AddFoundation(builder);
 
 #region Services
 
@@ -52,6 +59,13 @@ builder.Services.ConfigureApplicationCookie(options =>
     options.EventsType = typeof(CoopCookieAuthenticationEvents);
 });
 
+builder.Services.Configure<SecurityStampValidatorOptions>(options =>
+{
+    var configuredMinutes = builder.Configuration.GetValue<double?>(
+        "Authentication:SecurityStampValidationMinutes");
+    options.ValidationInterval = TimeSpan.FromMinutes(configuredMinutes is >= 0 ? configuredMinutes.Value : 5);
+});
+
 builder.Services.AddAntiforgery(options =>
 {
     options.HeaderName = "X-CSRF-TOKEN";
@@ -66,8 +80,31 @@ builder.Services.AddAntiforgery(options =>
 
 builder.Services.AddAuthorization(options =>
 {
+    var authenticatedUser = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+    options.DefaultPolicy = authenticatedUser;
+    options.FallbackPolicy = authenticatedUser;
+    options.AddPolicy(CoopPolicies.AuthenticatedUser, policy => policy.RequireAuthenticatedUser());
+    options.AddPolicy(CoopPolicies.PortfolioRead, policy => policy
+        .RequireAuthenticatedUser()
+        .RequireRole(CoopRoles.Viewer, CoopRoles.LoanOfficer, CoopRoles.Manager));
+    options.AddPolicy(CoopPolicies.PortfolioReview, policy => policy
+        .RequireAuthenticatedUser()
+        .RequireRole(CoopRoles.LoanOfficer, CoopRoles.Manager));
+    options.AddPolicy(CoopPolicies.PortfolioManage, policy => policy
+        .RequireAuthenticatedUser()
+        .RequireRole(CoopRoles.Manager));
+    options.AddPolicy(CoopPolicies.ImportRead, policy => policy
+        .RequireAuthenticatedUser()
+        .RequireRole(CoopRoles.LoanOfficer));
+    options.AddPolicy(CoopPolicies.ImportExecute, policy => policy
+        .RequireAuthenticatedUser()
+        .RequireRole(CoopRoles.LoanOfficer));
     options.AddPolicy(CoopPolicies.ManagerOnly, policy =>
         policy.RequireAuthenticatedUser().RequireRole(CoopRoles.Manager));
+    options.AddPolicy(CoopPolicies.AdminOnly, policy =>
+        policy.RequireAuthenticatedUser().RequireRole(CoopRoles.Admin));
 });
 
 // Import Engine
@@ -76,9 +113,24 @@ builder.Services.AddScoped<ImportValidator>();
 builder.Services.AddScoped<MemberImporter>();
 builder.Services.AddScoped<LoanImporter>();
 builder.Services.AddScoped<IExcelImportService, ExcelImportService>();
+builder.Services.AddScoped<IImportTempFileStore, ImportTempFileStore>();
+builder.Services.AddOptions<ImportUploadOptions>()
+    .Bind(builder.Configuration.GetSection(ImportUploadOptions.SectionName))
+    .Validate(options => options.MaxUploadBytes > 0, "ImportUpload:MaxUploadBytes must be greater than zero.")
+    .Validate(options => options.RetentionHours > 0, "ImportUpload:RetentionHours must be greater than zero.")
+    .Validate(options => options.AllowedExtensions.Length > 0 &&
+                         options.AllowedExtensions.All(extension => extension is ".xlsx" or ".xls"),
+        "ImportUpload:AllowedExtensions may contain only .xlsx and .xls.")
+    .ValidateOnStart();
+var importUploadOptions = builder.Configuration
+    .GetSection(ImportUploadOptions.SectionName)
+    .Get<ImportUploadOptions>() ?? new ImportUploadOptions();
+builder.Services.Configure<FormOptions>(options =>
+    options.MultipartBodyLengthLimit = importUploadOptions.MaxUploadBytes + (1024 * 1024));
 
 // Dashboard
 builder.Services.AddScoped<IDashboardService, DashboardService>();
+builder.Services.AddScoped<IBootstrapUserService, BootstrapUserService>();
 
 // Portfolio Snapshot review workflow (publishing remains disabled)
 builder.Services.AddScoped<IPortfolioSnapshotSource, ExcelPortfolioSnapshotSource>();
@@ -118,9 +170,43 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddHealthChecks();
 
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("Login", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        }));
+    options.AddPolicy("Upload", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.User.Identity?.Name ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        }));
+});
+
 #endregion
 
 var app = builder.Build();
+
+// Force environment-sensitive configuration validation before accepting traffic.
+_ = app.Services.GetRequiredService<IOptions<CoopDataProtectionOptions>>().Value;
+_ = app.Services.GetRequiredService<IOptions<ReverseProxyTrustOptions>>().Value;
+_ = app.Services.GetRequiredService<IOptions<ImportUploadOptions>>().Value;
+
+if (BootstrapUserCommand.IsRequested(args))
+{
+    Environment.ExitCode = await BootstrapUserCommand.RunAsync(app.Services, args);
+    return;
+}
 
 #region Middleware
 
@@ -130,17 +216,22 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+if (app.Configuration.GetValue<bool>("ReverseProxy:Enabled"))
+    app.UseForwardedHeaders();
+
 app.UseHttpsRedirection();
 
 app.UseCors("AllowFrontend");
 
 app.UseAuthentication();
 
+app.UseRateLimiter();
+
 app.UseAuthorization();
 
 app.MapControllers();
 
-app.MapHealthChecks("/health");
+app.MapHealthChecks("/health").AllowAnonymous();
 
 #endregion
 

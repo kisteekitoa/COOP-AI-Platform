@@ -18,5 +18,12 @@ public static class CoopRoles
 
 public static class CoopPolicies
 {
+    public const string AuthenticatedUser = "AuthenticatedUser";
+    public const string PortfolioRead = "PortfolioRead";
+    public const string PortfolioReview = "PortfolioReview";
+    public const string PortfolioManage = "PortfolioManage";
+    public const string ImportRead = "ImportRead";
+    public const string ImportExecute = "ImportExecute";
     public const string ManagerOnly = "ManagerOnly";
+    public const string AdminOnly = "AdminOnly";
 }

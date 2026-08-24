@@ -5,6 +5,7 @@ using COOPAI.API.Services.PortfolioSnapshots;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 
 namespace COOPAI.API.Controllers;
@@ -17,16 +18,22 @@ public sealed class PortfolioSnapshotsController(
     IOptions<PortfolioSnapshotOptions> snapshotOptions) : ControllerBase
 {
     [HttpGet]
+    [Authorize(Policy = CoopPolicies.PortfolioRead)]
     public async Task<ActionResult<IReadOnlyList<PortfolioSnapshotListItemDto>>> List(
         CancellationToken cancellationToken) =>
         Ok(await workflowService.ListAsync(cancellationToken));
 
     [HttpPost("validate")]
     [Consumes("multipart/form-data")]
+    [Authorize(Policy = CoopPolicies.PortfolioReview)]
+    [EnableRateLimiting("Upload")]
     public async Task<IActionResult> Validate(
         [FromForm] PortfolioSnapshotValidateRequest request,
         CancellationToken cancellationToken)
     {
+        var antiforgeryError = await ValidateAntiforgeryAsync();
+        if (antiforgeryError is not null)
+            return antiforgeryError;
         var requestError = ValidateUpload(request.File, request.AsOfDate);
         if (requestError is not null)
             return BadRequest(requestError);
@@ -53,10 +60,15 @@ public sealed class PortfolioSnapshotsController(
 
     [HttpPost("drafts")]
     [Consumes("multipart/form-data")]
+    [Authorize(Policy = CoopPolicies.PortfolioManage)]
+    [EnableRateLimiting("Upload")]
     public async Task<IActionResult> CreateDraft(
         [FromForm] PortfolioSnapshotCreateDraftRequest request,
         CancellationToken cancellationToken)
     {
+        var antiforgeryError = await ValidateAntiforgeryAsync();
+        if (antiforgeryError is not null)
+            return antiforgeryError;
         var requestError = ValidateUpload(request.File, request.AsOfDate);
         if (requestError is not null)
             return BadRequest(requestError);
@@ -85,8 +97,12 @@ public sealed class PortfolioSnapshotsController(
     }
 
     [HttpPost("{id:int}/validate")]
+    [Authorize(Policy = CoopPolicies.PortfolioManage)]
     public async Task<IActionResult> ValidateDraft(int id, CancellationToken cancellationToken)
     {
+        var antiforgeryError = await ValidateAntiforgeryAsync();
+        if (antiforgeryError is not null)
+            return antiforgeryError;
         try
         {
             return Ok(await workflowService.ValidateDraftAsync(id, cancellationToken));
@@ -98,6 +114,7 @@ public sealed class PortfolioSnapshotsController(
     }
 
     [HttpGet("{id:int}/review")]
+    [Authorize(Policy = CoopPolicies.PortfolioReview)]
     public async Task<IActionResult> Review(int id, CancellationToken cancellationToken)
     {
         var result = await workflowService.GetReviewAsync(id, cancellationToken);
@@ -107,6 +124,7 @@ public sealed class PortfolioSnapshotsController(
     }
 
     [HttpGet("{id:int}/records")]
+    [Authorize(Policy = CoopPolicies.PortfolioReview)]
     public async Task<IActionResult> Records(
         int id,
         [FromQuery] int page = 1,
@@ -145,11 +163,15 @@ public sealed class PortfolioSnapshotsController(
     }
 
     [HttpPost("{id:int}/reject")]
+    [Authorize(Policy = CoopPolicies.PortfolioManage)]
     public async Task<IActionResult> Reject(
         int id,
         [FromBody] PortfolioSnapshotRejectRequest request,
         CancellationToken cancellationToken)
     {
+        var antiforgeryError = await ValidateAntiforgeryAsync();
+        if (antiforgeryError is not null)
+            return antiforgeryError;
         try
         {
             return Ok(await workflowService.RejectAsync(id, request.Reason, cancellationToken));
@@ -226,6 +248,13 @@ public sealed class PortfolioSnapshotsController(
             return UnprocessableEntity(error);
         return BadRequest(error);
     }
+
+    private async Task<IActionResult?> ValidateAntiforgeryAsync() =>
+        await AntiforgeryError.IsInvalidAsync(HttpContext, antiforgery)
+            ? BadRequest(new PortfolioSnapshotErrorDto(
+                "InvalidAntiforgeryToken",
+                "The request is missing or has an invalid antiforgery token."))
+            : null;
 
     private static PortfolioSnapshotErrorDto? ValidateUpload(IFormFile? file, DateOnly asOfDate)
     {

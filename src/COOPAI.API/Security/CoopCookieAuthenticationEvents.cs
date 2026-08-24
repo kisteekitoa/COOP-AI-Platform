@@ -7,8 +7,21 @@ namespace COOPAI.API.Security;
 
 public sealed class CoopCookieAuthenticationEvents : CookieAuthenticationEvents
 {
+    private readonly ISecurityStampValidator _securityStampValidator;
+
+    public CoopCookieAuthenticationEvents(ISecurityStampValidator securityStampValidator)
+    {
+        _securityStampValidator = securityStampValidator;
+    }
+
     public override async Task ValidatePrincipal(CookieValidatePrincipalContext context)
     {
+        // Compose the application-specific enabled-user check with Identity's
+        // standard stamp validation so password changes and role refreshes work.
+        await _securityStampValidator.ValidateAsync(context);
+        if (context.Principal?.Identity?.IsAuthenticated != true)
+            return;
+
         var userManager = context.HttpContext.RequestServices.GetRequiredService<UserManager<CoopUser>>();
         var user = context.Principal is null
             ? null

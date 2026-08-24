@@ -1,6 +1,4 @@
-import axios from "axios";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5171";
+import { apiClient } from "./apiClient";
 
 export interface DashboardContractTypeDto {
     prefix: string;
@@ -47,9 +45,6 @@ export interface DashboardSummaryDto {
 }
 
 export async function getDashboardSummary() {
-    const response = await axios.get<DashboardSummaryDto>(
-        `${API_BASE_URL}/api/dashboard/summary`,
-        { withCredentials: true },
-    );
+    const response = await apiClient.get<DashboardSummaryDto>("/api/dashboard/summary");
     return response.data;
 }

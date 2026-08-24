@@ -315,7 +315,7 @@ export default function PortfolioSnapshotsPage() {
                     {isManager ? (
                         <Card className={review.canPublish ? "border-green-300 bg-green-50" : "border-amber-300 bg-amber-50"}>
                             <h2 className="flex items-center gap-2 text-xl font-semibold"><LockKeyhole size={20} /> การอนุมัติ Published Snapshot</h2>
-                            <p className="mt-2 text-slate-700">Dashboard V1 ยังไม่ได้เปลี่ยนมาใช้ Snapshot ชุดนี้ การเชื่อมต่อ Dashboard จะดำเนินการในขั้นตอนถัดไป</p>
+                            <p className="mt-2 text-slate-700">Dashboard ใช้เฉพาะ Published Snapshot ปัจจุบันเท่านั้น สถานะ Draft หรือ Validated จะยังไม่เปลี่ยนข้อมูลบน Dashboard และ Snapshot เดิมจะเป็น Superseded เมื่อเผยแพร่ชุดใหม่สำเร็จ</p>
                             {!review.canPublish ? <p className="mt-2 text-sm text-amber-800">ยังเผยแพร่ไม่ได้: {review.publishBlockedReasons.join(", ")}</p> : null}
                             <button
                                 className="mt-3 rounded-lg bg-green-700 px-4 py-2 text-white disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600"
@@ -345,7 +345,7 @@ export default function PortfolioSnapshotsPage() {
                             <div className="sm:col-span-2"><dt className="text-slate-500">ยอดคงเหลือรวม</dt><dd className="text-lg font-bold">{moneyFormatter.format(review.financial.totalOutstanding)} บาท</dd></div>
                         </dl>
                         <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                            การยืนยันนี้อนุมัติชุดข้อมูลเป็น Published Snapshot เท่านั้น Dashboard V1 ยังไม่ใช้ข้อมูลชุดนี้ และจะเชื่อมต่อในขั้นตอน Dashboard V1.1 ภายหลัง
+                            การยืนยันนี้จะทำให้ Snapshot ชุดนี้เป็น Published และเป็นแหล่งข้อมูลรายงานของ Dashboard โดย Snapshot ที่ Published อยู่ก่อนหน้าจะเปลี่ยนเป็น Superseded
                         </div>
                         <div className="mt-6 flex flex-wrap justify-end gap-3">
                             <button className="rounded-lg border border-slate-300 px-4 py-2" type="button" disabled={busy} onClick={() => setShowPublishConfirmation(false)}>ยกเลิก</button>

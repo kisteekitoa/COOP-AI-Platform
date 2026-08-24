@@ -1,8 +1,7 @@
 import axios from "axios";
-import { getAntiforgeryToken } from "./authService";
+import { apiClient, getAntiforgeryHeaders } from "./apiClient";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5171";
-const SNAPSHOT_URL = `${API_BASE_URL}/api/portfolio-snapshots`;
+const SNAPSHOT_URL = "/api/portfolio-snapshots";
 
 export interface SnapshotCounts {
     sourceRows: number;
@@ -126,7 +125,11 @@ export async function validateSnapshot(file: File, asOfDate: string) {
     const form = new FormData();
     form.append("file", file);
     form.append("asOfDate", asOfDate);
-    const response = await axios.post<SnapshotValidation>(`${SNAPSHOT_URL}/validate`, form);
+    const response = await apiClient.post<SnapshotValidation>(
+        `${SNAPSHOT_URL}/validate`,
+        form,
+        { headers: await getAntiforgeryHeaders() },
+    );
     return response.data;
 }
 
@@ -141,39 +144,46 @@ export async function createSnapshotDraft(
     form.append("asOfDate", asOfDate);
     form.append("expectedSourceFileHash", expectedSourceFileHash);
     form.append("expectedSnapshotContentHash", expectedSnapshotContentHash);
-    const response = await axios.post<{ id: number; status: string; wasExisting: boolean }>(
+    const response = await apiClient.post<{ id: number; status: string; wasExisting: boolean }>(
         `${SNAPSHOT_URL}/drafts`,
         form,
+        { headers: await getAntiforgeryHeaders() },
     );
     return response.data;
 }
 
 export async function getSnapshotReview(id: number) {
-    const response = await axios.get<SnapshotReview>(`${SNAPSHOT_URL}/${id}/review`);
+    const response = await apiClient.get<SnapshotReview>(`${SNAPSHOT_URL}/${id}/review`);
     return response.data;
 }
 
 export async function listSnapshots() {
-    const response = await axios.get<SnapshotListItem[]>(SNAPSHOT_URL);
+    const response = await apiClient.get<SnapshotListItem[]>(SNAPSHOT_URL);
     return response.data;
 }
 
 export async function validatePersistedDraft(id: number) {
-    await axios.post(`${SNAPSHOT_URL}/${id}/validate`);
+    await apiClient.post(
+        `${SNAPSHOT_URL}/${id}/validate`,
+        undefined,
+        { headers: await getAntiforgeryHeaders() },
+    );
 }
 
 export async function rejectSnapshot(id: number, reason: string) {
-    await axios.post(`${SNAPSHOT_URL}/${id}/reject`, { reason });
+    await apiClient.post(
+        `${SNAPSHOT_URL}/${id}/reject`,
+        { reason },
+        { headers: await getAntiforgeryHeaders() },
+    );
 }
 
 export async function publishSnapshot(id: number, expectedSnapshotContentHash: string) {
-    const requestToken = await getAntiforgeryToken();
-    const response = await axios.post<SnapshotPublishResult>(
+    const response = await apiClient.post<SnapshotPublishResult>(
         `${SNAPSHOT_URL}/${id}/publish`,
         { expectedSnapshotContentHash, confirmed: true },
         {
-            withCredentials: true,
-            headers: { "X-CSRF-TOKEN": requestToken },
+            headers: await getAntiforgeryHeaders(),
         },
     );
     return response.data;

@@ -1,209 +1,102 @@
-using System.Linq;
 using COOPAI.API.Models.Import;
+using COOPAI.API.Security;
 using COOPAI.API.Services.Import;
+using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using OfficeOpenXml;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Options;
 
 namespace COOPAI.API.Controllers;
 
 [ApiController]
 [Route("api/import")]
-public class ImportController : ControllerBase
+public sealed class ImportController(
+    IExcelImportService service,
+    IImportTempFileStore tempFileStore,
+    IOptions<ImportUploadOptions> uploadOptions,
+    IAntiforgery antiforgery) : ControllerBase
 {
-    private readonly IExcelImportService _service;
-
-    public ImportController(IExcelImportService service)
-    {
-        _service = service;
-    }
-
     [HttpGet("ping")]
-    public IActionResult Ping()
+    [Authorize(Policy = CoopPolicies.ImportRead)]
+    public IActionResult Ping() => Ok(new
     {
-        return Ok(new
-        {
-            success = true,
-            message = "COOP-AI Import Engine Ready"
-        });
-    }
+        success = true,
+        message = "COOP-AI Import Engine Ready"
+    });
 
     [HttpGet("preview")]
-    public IActionResult Preview()
+    [Authorize(Policy = CoopPolicies.ImportRead)]
+    public IActionResult Preview() => Ok(new
     {
-        var filePath = @"D:\Import\Loan.xlsx";
-        var logs = new List<string>();
-
-        var fileInfo = new System.IO.FileInfo(filePath);
-        logs.Add($"Uploaded filename: {fileInfo.Name}");
-        logs.Add($"Full temporary file path: {fileInfo.FullName}");
-        logs.Add($"File exists: {fileInfo.Exists}");
-        logs.Add(fileInfo.Exists ? $"File size: {fileInfo.Length}" : "File size: 0");
-
-        if (!fileInfo.Exists)
-        {
-            return NotFound(new
-            {
-                success = false,
-                message = $"File not found : {filePath}",
-                logs
-            });
-        }
-
-        using var package = new ExcelPackage(fileInfo);
-        var worksheets = package.Workbook.Worksheets;
-
-        logs.Add($"Workbook.Worksheets.Count: {worksheets.Count}");
-
-        var worksheetDetails = new List<object>();
-        for (var index = 0; index < worksheets.Count; index++)
-        {
-            var worksheet = worksheets[index];
-            worksheetDetails.Add(new
-            {
-                Index = index,
-                Name = worksheet.Name
-            });
-            logs.Add($"Worksheet {index}: {worksheet.Name}");
-        }
-
-        var targetWorksheet = worksheets
-            .FirstOrDefault(x =>
-                x.Name.Trim().Equals("ป้อนประจำวัน", StringComparison.OrdinalIgnoreCase));
-
-        if (targetWorksheet == null)
-        {
-            return NotFound(new
-            {
-                success = false,
-                message = "Worksheet 'ป้อนประจำวัน' not found.",
-                logs,
-                worksheets = worksheetDetails
-            });
-        }
-
-        var previewResult = _service.Preview(filePath);
-
-        return Ok(new
-        {
-            success = previewResult.Success,
-            totalRows = previewResult.TotalRows,
-            headers = previewResult.Headers,
-            previewRows = previewResult.PreviewRows,
-            errors = previewResult.Errors,
-            logs,
-            worksheet = new
-            {
-                Name = targetWorksheet.Name,
-                StartRow = targetWorksheet.Dimension?.Start.Row,
-                StartColumn = targetWorksheet.Dimension?.Start.Column,
-                EndRow = targetWorksheet.Dimension?.End.Row,
-                EndColumn = targetWorksheet.Dimension?.End.Column
-            }
-        });
-    }
+        success = true,
+        message = "Upload a workbook to the validate endpoint for a safe preview.",
+        allowedExtensions = uploadOptions.Value.AllowedExtensions,
+        maxUploadBytes = uploadOptions.Value.MaxUploadBytes
+    });
 
     [HttpPost("import")]
     [Consumes("multipart/form-data")]
-    public async Task<IActionResult> Import([FromForm] ImportFileRequest request)
+    [Authorize(Policy = CoopPolicies.ImportExecute)]
+    [EnableRateLimiting("Upload")]
+    public async Task<IActionResult> Import(
+        [FromForm] ImportFileRequest request,
+        CancellationToken cancellationToken)
     {
-        if (request.File == null)
+        if (await AntiforgeryError.IsInvalidAsync(HttpContext, antiforgery))
+            return BadRequest(UploadError("InvalidAntiforgeryToken", "The request is missing or has an invalid antiforgery token."));
+        if (request.File is null)
+            return BadRequest(UploadError("FileRequired", "A non-empty Excel workbook is required."));
+
+        try
         {
-            return BadRequest(new
+            await using var upload = await tempFileStore.SaveAsync(request.File, cancellationToken);
+            var result = await service.ImportAsync(upload.FilePath, new ImportExecutionOptions
             {
-                success = false,
-                message = "File is required."
+                ValidationFileHash = request.ValidationFileHash,
+                ApprovedErrorSkips = request.SkipRows ?? []
+            });
+
+            return Ok(new
+            {
+                success = result.Success,
+                fileHash = result.FileHash,
+                totalRows = result.TotalRows,
+                importedRows = result.ImportedRows,
+                updatedRows = result.UpdatedRows,
+                skippedRows = result.SkippedRows,
+                userSkippedErrorRows = result.UserSkippedErrorRows,
+                failedRows = result.FailedRows,
+                batchId = result.BatchId,
+                errors = result.Errors,
+                errorDetails = result.ErrorDetails,
+                skipDetails = result.SkipDetails,
+                userSkippedErrorDetails = result.UserSkippedErrorDetails
             });
         }
-
-        var file = request.File;
-
-        var extension = Path.GetExtension(file.FileName)?.ToLowerInvariant();
-
-        if (extension != ".xlsx" && extension != ".xls")
+        catch (ImportUploadException exception)
         {
-            return BadRequest(new
-            {
-                success = false,
-                message = "Only .xlsx and .xls files are supported."
-            });
+            return UploadFailure(exception);
         }
-
-        var tempFolder = Path.Combine(Path.GetTempPath(), "COOPAI-Imports");
-        Directory.CreateDirectory(tempFolder);
-
-        var tempFileName = Path.Combine(
-            tempFolder,
-            $"import_{Guid.NewGuid()}{extension}");
-
-        await using (var stream = System.IO.File.Create(tempFileName))
-        {
-            await file.CopyToAsync(stream);
-        }
-
-        var result = await _service.ImportAsync(tempFileName, new ImportExecutionOptions
-        {
-            ValidationFileHash = request.ValidationFileHash,
-            ApprovedErrorSkips = request.SkipRows ?? new List<ApprovedErrorSkipSelection>()
-        });
-
-        return Ok(new
-        {
-            success = result.Success,
-            fileHash = result.FileHash,
-            totalRows = result.TotalRows,
-            importedRows = result.ImportedRows,
-            updatedRows = result.UpdatedRows,
-            skippedRows = result.SkippedRows,
-            userSkippedErrorRows = result.UserSkippedErrorRows,
-            failedRows = result.FailedRows,
-            batchId = result.BatchId,
-            errors = result.Errors,
-            errorDetails = result.ErrorDetails,
-            skipDetails = result.SkipDetails,
-            userSkippedErrorDetails = result.UserSkippedErrorDetails
-        });
     }
 
     [HttpPost("validate")]
     [Consumes("multipart/form-data")]
-    public async Task<IActionResult> Validate([FromForm] ImportFileRequest request)
+    [Authorize(Policy = CoopPolicies.ImportRead)]
+    [EnableRateLimiting("Upload")]
+    public async Task<IActionResult> Validate(
+        [FromForm] ImportFileRequest request,
+        CancellationToken cancellationToken)
     {
-        if (request.File == null)
-        {
-            return BadRequest(new
-            {
-                success = false,
-                message = "File is required."
-            });
-        }
-
-        var file = request.File;
-        var extension = Path.GetExtension(file.FileName)?.ToLowerInvariant();
-
-        if (extension != ".xlsx" && extension != ".xls")
-        {
-            return BadRequest(new
-            {
-                success = false,
-                message = "Only .xlsx and .xls files are supported."
-            });
-        }
-
-        var tempFolder = Path.Combine(Path.GetTempPath(), "COOPAI-Validations");
-        Directory.CreateDirectory(tempFolder);
-
-        var tempFileName = Path.Combine(
-            tempFolder,
-            $"validate_{Guid.NewGuid()}{extension}");
+        if (await AntiforgeryError.IsInvalidAsync(HttpContext, antiforgery))
+            return BadRequest(UploadError("InvalidAntiforgeryToken", "The request is missing or has an invalid antiforgery token."));
+        if (request.File is null)
+            return BadRequest(UploadError("FileRequired", "A non-empty Excel workbook is required."));
 
         try
         {
-            await using (var stream = System.IO.File.Create(tempFileName))
-            {
-                await file.CopyToAsync(stream);
-            }
-
-            var result = await _service.ValidateOnlyAsync(tempFileName);
+            await using var upload = await tempFileStore.SaveAsync(request.File, cancellationToken);
+            var result = await service.ValidateOnlyAsync(upload.FilePath);
 
             return Ok(new
             {
@@ -222,10 +115,21 @@ public class ImportController : ControllerBase
                 skipDetails = result.SkipDetails
             });
         }
-        finally
+        catch (ImportUploadException exception)
         {
-            if (System.IO.File.Exists(tempFileName))
-                System.IO.File.Delete(tempFileName);
+            return UploadFailure(exception);
         }
     }
+
+    private IActionResult UploadFailure(ImportUploadException exception) =>
+        exception.Code == "UploadTooLarge"
+            ? StatusCode(StatusCodes.Status413PayloadTooLarge, UploadError(exception.Code, exception.Message))
+            : BadRequest(UploadError(exception.Code, exception.Message));
+
+    private static object UploadError(string code, string message) => new
+    {
+        success = false,
+        code,
+        message
+    };
 }

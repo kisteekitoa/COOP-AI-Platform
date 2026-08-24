@@ -3,6 +3,7 @@ using COOPAI.API.Services.Auth;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace COOPAI.API.Controllers;
 
@@ -23,6 +24,7 @@ public sealed class AuthController(
 
     [AllowAnonymous]
     [HttpPost("login")]
+    [EnableRateLimiting("Login")]
     public async Task<ActionResult<AuthUserDto>> Login(
         [FromBody] LoginRequestDto request,
         CancellationToken cancellationToken)

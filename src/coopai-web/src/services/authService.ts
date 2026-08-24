@@ -1,10 +1,5 @@
 import axios from "axios";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5171";
-const authClient = axios.create({
-    baseURL: `${API_BASE_URL}/api/auth`,
-    withCredentials: true,
-});
+import { apiClient, getAntiforgeryHeaders } from "./apiClient";
 
 export interface AuthUser {
     id: number;
@@ -13,36 +8,32 @@ export interface AuthUser {
     roles: string[];
 }
 
-interface AntiforgeryResponse {
-    requestToken: string;
-}
-
 export async function getAntiforgeryToken() {
-    const response = await authClient.get<AntiforgeryResponse>("/csrf");
-    return response.data.requestToken;
+    const headers = await getAntiforgeryHeaders();
+    return headers["X-CSRF-TOKEN"];
 }
 
 export async function login(userName: string, password: string) {
-    const requestToken = await getAntiforgeryToken();
-    const response = await authClient.post<AuthUser>(
-        "/login",
+    const headers = await getAntiforgeryHeaders();
+    const response = await apiClient.post<AuthUser>(
+        "/api/auth/login",
         { userName, password },
-        { headers: { "X-CSRF-TOKEN": requestToken } },
+        { headers },
     );
     return response.data;
 }
 
 export async function logout() {
-    const requestToken = await getAntiforgeryToken();
-    await authClient.post(
-        "/logout",
+    const headers = await getAntiforgeryHeaders();
+    await apiClient.post(
+        "/api/auth/logout",
         undefined,
-        { headers: { "X-CSRF-TOKEN": requestToken } },
+        { headers },
     );
 }
 
 export async function getCurrentUser() {
-    const response = await authClient.get<AuthUser>("/me");
+    const response = await apiClient.get<AuthUser>("/api/auth/me");
     return response.data;
 }
 

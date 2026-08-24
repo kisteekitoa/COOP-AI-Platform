@@ -1,6 +1,4 @@
-import axios from "axios";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5171";
+import { apiClient, getAntiforgeryHeaders } from "./apiClient";
 
 export interface ImportErrorDetail {
     rowNumber: number;
@@ -75,9 +73,10 @@ export async function validateImport(file: File): Promise<ImportValidationResult
     const formData = new FormData();
     formData.append("File", file);
 
-    const response = await axios.post<ImportValidationResult>(
-        `${API_BASE_URL}/api/import/validate`,
-        formData
+    const response = await apiClient.post<ImportValidationResult>(
+        "/api/import/validate",
+        formData,
+        { headers: await getAntiforgeryHeaders() },
     );
 
     return response.data;
@@ -96,9 +95,10 @@ export async function runImport(
         formData.append(`SkipRows[${index}].ContractNo`, row.contractNo);
     });
 
-    const response = await axios.post<ImportResult>(
-        `${API_BASE_URL}/api/import/import`,
-        formData
+    const response = await apiClient.post<ImportResult>(
+        "/api/import/import",
+        formData,
+        { headers: await getAntiforgeryHeaders() },
     );
 
     return response.data;
