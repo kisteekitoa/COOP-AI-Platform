@@ -3,13 +3,13 @@ import Sidebar from "../components/layout/Sidebar";
 
 export default function MainLayout() {
     return (
-        <div className="flex min-h-screen bg-slate-100">
+        <div className="flex min-h-screen flex-col bg-slate-100 lg:flex-row">
 
             <Sidebar />
 
-            <main className="flex-1">
+            <main className="min-w-0 flex-1">
 
-                <header className="h-16 bg-white border-b shadow-sm flex items-center px-8">
+                <header className="flex min-h-16 items-center border-b bg-white px-4 py-3 shadow-sm sm:px-8">
 
                     <div>
 
@@ -25,7 +25,7 @@ export default function MainLayout() {
 
                 </header>
 
-                <section className="p-8">
+                <section className="p-4 sm:p-6 lg:p-8">
                     <Outlet />
                 </section>
 

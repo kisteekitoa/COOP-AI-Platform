@@ -76,7 +76,7 @@ export default function DashboardCharts({ contractTypes }: Props) {
     }];
     const balanceSeries = [{
         name: "ยอดคงเหลือรวม",
-        data: contractTypes.map((contractType) => contractType.totalBalance),
+        data: contractTypes.map((contractType) => contractType.totalOutstanding),
     }];
     const chartHeight = Math.max(360, contractTypes.length * 72);
 

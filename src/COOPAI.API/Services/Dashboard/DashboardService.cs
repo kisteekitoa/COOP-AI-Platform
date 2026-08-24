@@ -1,99 +1,155 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using COOPAI.API.Data;
 using COOPAI.API.DTOs.Dashboard;
+using COOPAI.API.Models.Portfolio;
 using Microsoft.EntityFrameworkCore;
 
 namespace COOPAI.API.Services.Dashboard;
 
-public class DashboardService : IDashboardService
+public sealed class DashboardService(CoopDbContext dbContext) : IDashboardService
 {
+    public const string PublishedSnapshotDataSource = "Published Portfolio Snapshot";
     private static readonly DashboardLoanTypeClassifier LoanTypeClassifier = new();
 
-    private readonly CoopDbContext _dbContext;
-
-    public DashboardService(CoopDbContext dbContext)
+    public async Task<DashboardSummaryDto> GetSummaryAsync(
+        CancellationToken cancellationToken = default)
     {
-        _dbContext = dbContext;
-    }
-
-    public async Task<DashboardSummaryDto> GetSummaryAsync()
-    {
-        var contracts = await _dbContext.LoanContracts
+        var summary = await dbContext.PortfolioSnapshots
             .AsNoTracking()
-            .Where(contract => !contract.IsDeleted)
-            .Select(contract => new DashboardContractSnapshot
+            .Where(snapshot => snapshot.Status == PortfolioSnapshotStatus.Published)
+            .Select(snapshot => new DashboardSummaryDto
             {
-                ContractNo = contract.ContractNo,
-                PrincipalBalance = contract.PrincipalBalance,
-                ProfitBalance = contract.ProfitBalance,
-                TotalBalance = contract.TotalBalance
+                HasPublishedSnapshot = true,
+                DataSource = PublishedSnapshotDataSource,
+                SnapshotId = snapshot.Id,
+                AsOfDate = snapshot.AsOfDate,
+                PublishedAt = snapshot.PublishedAt,
+                GeneratedAt = DateTime.UtcNow,
+                IsReconciled =
+                    snapshot.TotalSourceRows == snapshot.TotalContractCount + snapshot.PlaceholderRowCount &&
+                    snapshot.TotalContractCount == snapshot.InTermContractCount + snapshot.ExpiredContractCount &&
+                    snapshot.TotalContractCount == snapshot.OutstandingContractCount + snapshot.PaidOffContractCount &&
+                    snapshot.TotalContractCount == snapshot.InTermOutstandingContractCount +
+                        snapshot.InTermPaidOffContractCount + snapshot.ExpiredOutstandingContractCount +
+                        snapshot.ExpiredPaidOffContractCount &&
+                    snapshot.PrincipalOutstanding + snapshot.ProfitOutstanding == snapshot.TotalOutstanding &&
+                    snapshot.PrincipalDifference == 0m && snapshot.ProfitDifference == 0m &&
+                    snapshot.TotalDifference == 0m && snapshot.ComponentDifference == 0m,
+                TotalSourceRows = snapshot.TotalSourceRows,
+                TotalContracts = snapshot.TotalContractCount,
+                TemplatePlaceholderRows = snapshot.PlaceholderRowCount,
+                InTermContracts = snapshot.InTermContractCount,
+                ExpiredContracts = snapshot.ExpiredContractCount,
+                OutstandingContracts = snapshot.OutstandingContractCount,
+                PaidOffContracts = snapshot.PaidOffContractCount,
+                InTermOutstandingContracts = snapshot.InTermOutstandingContractCount,
+                InTermPaidOffContracts = snapshot.InTermPaidOffContractCount,
+                ExpiredOutstandingContracts = snapshot.ExpiredOutstandingContractCount,
+                ExpiredPaidOffContracts = snapshot.ExpiredPaidOffContractCount,
+                WarningContracts = snapshot.WarningRecordCount,
+                UnresolvedMemberContracts = snapshot.UnresolvedMemberContractCount,
+                ShadowExcludedContracts = snapshot.ShadowExcludedCount,
+                CanonicalMatchedContracts = snapshot.MatchedCanonicalCount,
+                CanonicalMissingContracts = snapshot.MissingCanonicalCount,
+                PrincipalOutstanding = snapshot.PrincipalOutstanding,
+                ProfitOutstanding = snapshot.ProfitOutstanding,
+                TotalOutstanding = snapshot.TotalOutstanding,
+                ExpiredOutstandingBalance = snapshot.ExpiredOutstandingTotal
             })
-            .ToListAsync();
+            .SingleOrDefaultAsync(cancellationToken);
 
-        var totalMembers = await _dbContext.Members
-            .AsNoTracking()
-            .CountAsync(member => !member.IsDeleted);
-
-        return new DashboardSummaryDto
+        if (summary is null)
         {
-            TotalContracts = contracts.Count,
-            OutstandingContracts = contracts.Count(contract => contract.TotalBalance > 0m),
-            TotalMembers = totalMembers,
-            PrincipalBalance = contracts.Sum(contract => contract.PrincipalBalance),
-            ProfitBalance = contracts.Sum(contract => contract.ProfitBalance),
-            TotalBalance = contracts.Sum(contract => contract.TotalBalance),
-            ZeroBalanceContracts = contracts.Count(contract => contract.TotalBalance == 0m),
-            GeneratedAt = DateTime.Now,
-            ContractTypes = BuildContractTypeBreakdown(contracts)
-        };
-    }
-
-    private static List<DashboardContractTypeDto> BuildContractTypeBreakdown(
-        IReadOnlyCollection<DashboardContractSnapshot> contracts)
-    {
-        var groups = new Dictionary<string, DashboardContractTypeDto>(StringComparer.Ordinal);
-
-        foreach (var contract in contracts)
-        {
-            var classification = LoanTypeClassifier.Classify(contract.ContractNo);
-            var prefix = classification.Prefix;
-            var name = classification.Name;
-
-            if (!groups.TryGetValue(prefix, out var group))
+            return new DashboardSummaryDto
             {
-                group = new DashboardContractTypeDto
-                {
-                    Prefix = prefix,
-                    Name = name
-                };
-                groups.Add(prefix, group);
-            }
-
-            group.ContractCount++;
-            if (contract.TotalBalance > 0m)
-                group.OutstandingContractCount++;
-            group.PrincipalBalance += contract.PrincipalBalance;
-            group.ProfitBalance += contract.ProfitBalance;
-            group.TotalBalance += contract.TotalBalance;
+                HasPublishedSnapshot = false,
+                GeneratedAt = DateTime.UtcNow
+            };
         }
 
-        return groups.Values
+        var snapshotId = summary.SnapshotId!.Value;
+        var records = await dbContext.PortfolioSnapshotRecords
+            .AsNoTracking()
+            .Where(record => record.PortfolioSnapshotId == snapshotId)
+            .Select(record => new
+            {
+                record.LoanTypePrefix,
+                record.TermStatus,
+                record.BalanceStatus,
+                record.PrincipalOutstanding,
+                record.ProfitOutstanding,
+                record.TotalOutstanding
+            })
+            .ToListAsync(cancellationToken);
+
+        var groups = records
+            .GroupBy(record => record.LoanTypePrefix, StringComparer.Ordinal)
+            .Select(group => new ContractTypeAggregate
+            {
+                Prefix = group.Key,
+                ContractCount = group.Count(),
+                OutstandingContractCount = group.Count(record =>
+                    record.BalanceStatus == PortfolioBalanceStatus.Outstanding),
+                PaidOffContractCount = group.Count(record =>
+                    record.BalanceStatus == PortfolioBalanceStatus.PaidOff),
+                InTermCount = group.Count(record => record.TermStatus == PortfolioTermStatus.InTerm),
+                ExpiredCount = group.Count(record => record.TermStatus == PortfolioTermStatus.Expired),
+                PrincipalOutstanding = group.Sum(record => record.PrincipalOutstanding),
+                ProfitOutstanding = group.Sum(record => record.ProfitOutstanding),
+                TotalOutstanding = group.Sum(record => record.TotalOutstanding)
+            })
+            .ToList();
+
+        summary.ContractTypes = groups
+            .Select(MapContractType)
+            .GroupBy(group => new { group.Prefix, group.Name })
+            .Select(group => new DashboardContractTypeDto
+            {
+                Prefix = group.Key.Prefix,
+                Name = group.Key.Name,
+                ContractCount = group.Sum(x => x.ContractCount),
+                OutstandingContractCount = group.Sum(x => x.OutstandingContractCount),
+                PaidOffContractCount = group.Sum(x => x.PaidOffContractCount),
+                InTermCount = group.Sum(x => x.InTermCount),
+                ExpiredCount = group.Sum(x => x.ExpiredCount),
+                PrincipalOutstanding = group.Sum(x => x.PrincipalOutstanding),
+                ProfitOutstanding = group.Sum(x => x.ProfitOutstanding),
+                TotalOutstanding = group.Sum(x => x.TotalOutstanding)
+            })
             .OrderBy(group => group.Prefix == DashboardLoanTypeClassifier.UnknownPrefix)
             .ThenBy(group => group.Prefix, StringComparer.Ordinal)
             .ToList();
+
+        return summary;
     }
 
-    private sealed class DashboardContractSnapshot
+    private static DashboardContractTypeDto MapContractType(ContractTypeAggregate aggregate)
     {
-        public string ContractNo { get; init; } = string.Empty;
+        var classification = LoanTypeClassifier.ClassifyPrefix(aggregate.Prefix);
+        return new DashboardContractTypeDto
+        {
+            Prefix = classification.Prefix,
+            Name = classification.Name,
+            ContractCount = aggregate.ContractCount,
+            OutstandingContractCount = aggregate.OutstandingContractCount,
+            PaidOffContractCount = aggregate.PaidOffContractCount,
+            InTermCount = aggregate.InTermCount,
+            ExpiredCount = aggregate.ExpiredCount,
+            PrincipalOutstanding = aggregate.PrincipalOutstanding,
+            ProfitOutstanding = aggregate.ProfitOutstanding,
+            TotalOutstanding = aggregate.TotalOutstanding
+        };
+    }
 
-        public decimal PrincipalBalance { get; init; }
-
-        public decimal ProfitBalance { get; init; }
-
-        public decimal TotalBalance { get; init; }
+    private sealed class ContractTypeAggregate
+    {
+        public string Prefix { get; set; } = string.Empty;
+        public int ContractCount { get; set; }
+        public int OutstandingContractCount { get; set; }
+        public int PaidOffContractCount { get; set; }
+        public int InTermCount { get; set; }
+        public int ExpiredCount { get; set; }
+        public decimal PrincipalOutstanding { get; set; }
+        public decimal ProfitOutstanding { get; set; }
+        public decimal TotalOutstanding { get; set; }
     }
 }

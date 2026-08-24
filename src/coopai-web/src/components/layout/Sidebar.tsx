@@ -46,9 +46,9 @@ export default function Sidebar() {
     }
 
     return (
-        <aside className="w-64 bg-green-800 text-white h-screen flex flex-col shadow-xl">
+        <aside className="flex w-full flex-col bg-green-800 text-white shadow-xl lg:h-screen lg:w-64 lg:shrink-0">
 
-            <div className="p-6 border-b border-green-700">
+            <div className="border-b border-green-700 p-4 lg:p-6">
 
                 <h1 className="text-2xl font-bold">
                     COOP-AI
@@ -60,7 +60,7 @@ export default function Sidebar() {
 
             </div>
 
-            <nav className="flex-1 mt-5">
+            <nav className="flex flex-1 gap-1 overflow-x-auto p-2 lg:mt-3 lg:flex-col lg:overflow-visible lg:p-0">
 
                 {menus.map((item) => {
 
@@ -76,7 +76,7 @@ export default function Sidebar() {
                                     window.location.href = item.path;
                                 }
                             }}
-                            className="flex items-center w-full gap-4 px-6 py-3 hover:bg-green-700 transition"
+                            className="flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 transition hover:bg-green-700 lg:w-full lg:gap-4 lg:rounded-none lg:px-6 lg:py-3"
                         >
 
                             <Icon size={20} />
@@ -91,7 +91,7 @@ export default function Sidebar() {
 
             </nav>
 
-            <div className="border-t border-green-700 p-4">
+            <div className="hidden border-t border-green-700 p-4 lg:block">
                 <div className="flex items-center gap-3 rounded-xl bg-green-900/50 px-3 py-3">
                     <UserRound aria-hidden="true" size={20} className="shrink-0 text-green-200" />
                     <div className="min-w-0 flex-1">

@@ -1,11 +1,12 @@
-using System.Threading.Tasks;
 using COOPAI.API.DTOs.Dashboard;
 using COOPAI.API.Services.Dashboard;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace COOPAI.API.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/dashboard")]
 public class DashboardController : ControllerBase
 {
@@ -17,9 +18,10 @@ public class DashboardController : ControllerBase
     }
 
     [HttpGet("summary")]
-    public async Task<ActionResult<DashboardSummaryDto>> GetSummary()
+    public async Task<ActionResult<DashboardSummaryDto>> GetSummary(
+        CancellationToken cancellationToken)
     {
-        var summary = await _dashboardService.GetSummaryAsync();
+        var summary = await _dashboardService.GetSummaryAsync(cancellationToken);
         return Ok(summary);
     }
 }

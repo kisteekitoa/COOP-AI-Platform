@@ -44,6 +44,11 @@ internal sealed class DashboardLoanTypeClassifier
         return new DashboardLoanTypeClassification(UnknownPrefix, UnknownTypeName);
     }
 
+    public DashboardLoanTypeClassification ClassifyPrefix(string? prefix) =>
+        prefix is not null && ApprovedLoanTypes.TryGetValue(prefix, out var approvedName)
+            ? new DashboardLoanTypeClassification(prefix, approvedName)
+            : new DashboardLoanTypeClassification(UnknownPrefix, UnknownTypeName);
+
     private static bool TryClassifyDashboardOnlyPrefix(string? contractNo, out string prefix)
     {
         prefix = string.Empty;

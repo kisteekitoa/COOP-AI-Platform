@@ -4,6 +4,7 @@ using COOPAI.API.Models;
 using COOPAI.API.Models.Auth;
 using COOPAI.API.Models.Portfolio;
 using COOPAI.API.Services.PortfolioSnapshots;
+using COOPAI.API.Services.Dashboard;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -124,6 +125,44 @@ public sealed class PortfolioSnapshotGate2B2RealFileRehearsalTests(ITestOutputHe
             publisher.Id);
         Assert.Equal("Published", firstPublish.Status);
         Assert.Null(firstPublish.PreviousSupersededSnapshotId);
+
+        var dashboard = await new DashboardService(isolated).GetSummaryAsync();
+        Assert.True(dashboard.HasPublishedSnapshot);
+        Assert.Equal(draft.Id, dashboard.SnapshotId);
+        Assert.Equal(baseline.AsOfDate, dashboard.AsOfDate);
+        Assert.Equal(baseline.TotalContractCount, dashboard.TotalContracts);
+        Assert.Equal(baseline.InTermContractCount, dashboard.InTermContracts);
+        Assert.Equal(baseline.ExpiredContractCount, dashboard.ExpiredContracts);
+        Assert.Equal(baseline.OutstandingContractCount, dashboard.OutstandingContracts);
+        Assert.Equal(baseline.PaidOffContractCount, dashboard.PaidOffContracts);
+        Assert.Equal(baseline.InTermOutstandingContractCount, dashboard.InTermOutstandingContracts);
+        Assert.Equal(baseline.InTermPaidOffContractCount, dashboard.InTermPaidOffContracts);
+        Assert.Equal(baseline.ExpiredOutstandingContractCount, dashboard.ExpiredOutstandingContracts);
+        Assert.Equal(baseline.ExpiredPaidOffContractCount, dashboard.ExpiredPaidOffContracts);
+        Assert.Equal(baseline.Outstanding.Principal, dashboard.PrincipalOutstanding);
+        Assert.Equal(baseline.Outstanding.Profit, dashboard.ProfitOutstanding);
+        Assert.Equal(baseline.Outstanding.Total, dashboard.TotalOutstanding);
+        Assert.Equal(baseline.ExpiredOutstandingTotal, dashboard.ExpiredOutstandingBalance);
+        Assert.Equal(baseline.WarningRecordCount, dashboard.WarningContracts);
+        Assert.Equal(baseline.UnresolvedMemberContractCount, dashboard.UnresolvedMemberContracts);
+        Assert.Equal(baseline.ShadowExcludedCount, dashboard.ShadowExcludedContracts);
+        Assert.True(dashboard.IsReconciled);
+        Assert.Equal(baseline.TotalContractCount,
+            dashboard.ContractTypes.Sum(type => type.ContractCount));
+        Assert.Equal(baseline.InTermContractCount,
+            dashboard.ContractTypes.Sum(type => type.InTermCount));
+        Assert.Equal(baseline.ExpiredContractCount,
+            dashboard.ContractTypes.Sum(type => type.ExpiredCount));
+        Assert.Equal(baseline.OutstandingContractCount,
+            dashboard.ContractTypes.Sum(type => type.OutstandingContractCount));
+        Assert.Equal(baseline.PaidOffContractCount,
+            dashboard.ContractTypes.Sum(type => type.PaidOffContractCount));
+        Assert.Equal(baseline.Outstanding.Principal,
+            dashboard.ContractTypes.Sum(type => type.PrincipalOutstanding));
+        Assert.Equal(baseline.Outstanding.Profit,
+            dashboard.ContractTypes.Sum(type => type.ProfitOutstanding));
+        Assert.Equal(baseline.Outstanding.Total,
+            dashboard.ContractTypes.Sum(type => type.TotalOutstanding));
 
         isolated.ChangeTracker.Clear();
         var first = await isolated.PortfolioSnapshots
