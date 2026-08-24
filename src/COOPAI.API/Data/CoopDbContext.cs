@@ -147,6 +147,10 @@ public class CoopDbContext : IdentityDbContext<CoopUser, IdentityRole<int>, int>
         snapshot.HasKey(x => x.Id);
         snapshot.HasIndex(x => new { x.AsOfDate, x.Revision }).IsUnique();
         snapshot.HasIndex(x => new { x.Status, x.AsOfDate });
+        snapshot.HasIndex(x => x.Status)
+            .IsUnique()
+            .HasFilter("[Status] = 'Published'")
+            .HasDatabaseName("UX_PortfolioSnapshots_OneCurrentPublished");
         snapshot.HasIndex(x => new { x.SourceType, x.SourceFileHash });
         snapshot.HasIndex(x => new
         {
@@ -162,6 +166,15 @@ public class CoopDbContext : IdentityDbContext<CoopUser, IdentityRole<int>, int>
         snapshot.Property(x => x.SourceFileHash).HasMaxLength(64);
         snapshot.Property(x => x.SnapshotContentHash).HasMaxLength(64);
         snapshot.Property(x => x.RejectionReason).HasMaxLength(1000);
+        snapshot.Property(x => x.ConcurrencyVersion).IsConcurrencyToken();
+        snapshot.HasOne(x => x.PublishedByUser)
+            .WithMany()
+            .HasForeignKey(x => x.PublishedByUserId)
+            .OnDelete(DeleteBehavior.NoAction);
+        snapshot.HasOne(x => x.SupersededBySnapshot)
+            .WithMany()
+            .HasForeignKey(x => x.SupersededBySnapshotId)
+            .OnDelete(DeleteBehavior.NoAction);
         ConfigureSnapshotMoney(snapshot);
 
         var record = builder.Entity<PortfolioSnapshotRecord>();

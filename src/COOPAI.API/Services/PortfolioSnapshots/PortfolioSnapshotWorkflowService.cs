@@ -1,8 +1,11 @@
+using System.Data;
+using System.Data.Common;
 using System.Text.Json;
 using COOPAI.API.Data;
 using COOPAI.API.DTOs.PortfolioSnapshots;
 using COOPAI.API.Models.Portfolio;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace COOPAI.API.Services.PortfolioSnapshots;
 
@@ -11,7 +14,11 @@ public enum PortfolioSnapshotPersistenceStage
     HeaderTracked,
     RecordsTracked,
     ExclusionsTracked,
-    BeforeSave
+    BeforeSave,
+    PublishAfterCurrentObserved,
+    PublishAfterSupersedeTracked,
+    PublishAfterSupersedeSaved,
+    PublishBeforeCommit
 }
 
 public interface IPortfolioSnapshotPersistenceHook
@@ -58,6 +65,12 @@ public interface IPortfolioSnapshotWorkflowService
         string reason,
         CancellationToken cancellationToken = default);
 
+    Task<PortfolioSnapshotPublishDto> PublishAsync(
+        int id,
+        string expectedSnapshotContentHash,
+        int publisherUserId,
+        CancellationToken cancellationToken = default);
+
     Task<PortfolioSnapshotReviewDto?> GetReviewAsync(
         int id,
         CancellationToken cancellationToken = default);
@@ -88,13 +101,15 @@ public sealed class PortfolioSnapshotWorkflowService : IPortfolioSnapshotWorkflo
     private readonly PortfolioSnapshotContentHasher _contentHasher;
     private readonly PortfolioSnapshotValidator _validator;
     private readonly IReadOnlyList<IPortfolioSnapshotPersistenceHook> _persistenceHooks;
+    private readonly PortfolioSnapshotOptions _options;
 
     public PortfolioSnapshotWorkflowService(
         CoopDbContext dbContext,
         IPortfolioSnapshotSource source,
         IEnumerable<IPortfolioSnapshotPersistenceHook>? persistenceHooks = null,
         PortfolioSnapshotContentHasher? contentHasher = null,
-        PortfolioSnapshotValidator? validator = null)
+        PortfolioSnapshotValidator? validator = null,
+        IOptions<PortfolioSnapshotOptions>? options = null)
     {
         _dbContext = dbContext;
         _contentHasher = contentHasher ?? new PortfolioSnapshotContentHasher();
@@ -105,6 +120,7 @@ public sealed class PortfolioSnapshotWorkflowService : IPortfolioSnapshotWorkflo
             validator: _validator,
             contentHasher: _contentHasher);
         _persistenceHooks = persistenceHooks?.ToArray() ?? [];
+        _options = options?.Value ?? new PortfolioSnapshotOptions();
     }
 
     public async Task<PortfolioSnapshotValidationDto> ValidateAsync(
@@ -285,6 +301,193 @@ public sealed class PortfolioSnapshotWorkflowService : IPortfolioSnapshotWorkflo
         return MapLifecycle(snapshot);
     }
 
+    public async Task<PortfolioSnapshotPublishDto> PublishAsync(
+        int id,
+        string expectedSnapshotContentHash,
+        int publisherUserId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_options.PublishingEnabled)
+        {
+            throw new PortfolioSnapshotWorkflowException(
+                "PublishingDisabled",
+                $"Publishing Portfolio Snapshot {id} is disabled and no data was changed.",
+                true);
+        }
+
+        EnsureHash(expectedSnapshotContentHash, nameof(expectedSnapshotContentHash));
+        if (publisherUserId <= 0)
+        {
+            throw new PortfolioSnapshotWorkflowException(
+                "PublisherIdentityUnavailable",
+                "The authenticated Manager identity could not be resolved safely.");
+        }
+
+        var observedTarget = await _dbContext.PortfolioSnapshots
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == id, cancellationToken)
+            ?? throw NotFound(id);
+        var observedCurrent = await _dbContext.PortfolioSnapshots
+            .AsNoTracking()
+            .Where(x => x.Status == PortfolioSnapshotStatus.Published)
+            .Select(x => new PublishObservation(x.Id, x.ConcurrencyVersion))
+            .SingleOrDefaultAsync(cancellationToken);
+        await NotifyAsync(
+            PortfolioSnapshotPersistenceStage.PublishAfterCurrentObserved,
+            observedTarget,
+            cancellationToken);
+
+        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction;
+        try
+        {
+            transaction = await _dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
+        }
+        catch (DbException)
+        {
+            throw PublishConflict();
+        }
+
+        await using (transaction)
+        try
+        {
+            var snapshot = await _dbContext.PortfolioSnapshots
+                .Include(x => x.Records)
+                .Include(x => x.Exclusions)
+                .SingleOrDefaultAsync(x => x.Id == id, cancellationToken)
+                ?? throw NotFound(id);
+
+            if (snapshot.Status != PortfolioSnapshotStatus.Validated)
+            {
+                var code = snapshot.Status == PortfolioSnapshotStatus.Published
+                    ? "SnapshotAlreadyPublished"
+                    : "InvalidSnapshotTransition";
+                throw new PortfolioSnapshotWorkflowException(
+                    code,
+                    $"Snapshot {id} cannot transition from {snapshot.Status} to Published.",
+                    true);
+            }
+
+            if (!HashEquals(snapshot.SnapshotContentHash, expectedSnapshotContentHash))
+            {
+                throw new PortfolioSnapshotWorkflowException(
+                    "SnapshotContentHashMismatch",
+                    "The reviewed snapshot content hash is stale or does not match the persisted snapshot.",
+                    true);
+            }
+
+            if (snapshot.BlockingErrorCount != 0)
+            {
+                throw new PortfolioSnapshotWorkflowException(
+                    "BlockingErrors",
+                    "The snapshot has blocking validation errors and cannot be published.",
+                    true);
+            }
+
+            var integrityIssues = ValidatePersistedSnapshot(snapshot);
+            if (integrityIssues.Count > 0)
+            {
+                var hashMismatch = integrityIssues.Any(x =>
+                    x.Code == "PersistedSnapshotContentHashMismatch");
+                throw new PortfolioSnapshotWorkflowException(
+                    hashMismatch ? "SnapshotContentHashMismatch" : "SnapshotIntegrityMismatch",
+                    string.Join("; ", integrityIssues.Select(x => x.Code)),
+                    true);
+            }
+
+            var now = DateTime.UtcNow;
+            var previous = await _dbContext.PortfolioSnapshots
+                .SingleOrDefaultAsync(
+                    x => x.Status == PortfolioSnapshotStatus.Published && x.Id != id,
+                    cancellationToken);
+
+            if ((observedCurrent is null) != (previous is null) ||
+                observedCurrent is not null && previous is not null &&
+                (observedCurrent.Id != previous.Id ||
+                 observedCurrent.ConcurrencyVersion != previous.ConcurrencyVersion))
+            {
+                throw new PortfolioSnapshotWorkflowException(
+                    "ConcurrentPublishDetected",
+                    "Published snapshot governance changed after this request began; no changes were committed.",
+                    true);
+            }
+
+            if (previous is not null)
+            {
+                previous.Status = PortfolioSnapshotStatus.Superseded;
+                previous.SupersededAt = now;
+                previous.SupersededBySnapshotId = snapshot.Id;
+                previous.ConcurrencyVersion++;
+                await NotifyAsync(
+                    PortfolioSnapshotPersistenceStage.PublishAfterSupersedeTracked,
+                    snapshot,
+                    cancellationToken);
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                await NotifyAsync(
+                    PortfolioSnapshotPersistenceStage.PublishAfterSupersedeSaved,
+                    snapshot,
+                    cancellationToken);
+            }
+
+            snapshot.Status = PortfolioSnapshotStatus.Published;
+            snapshot.PublishedAt = now;
+            snapshot.PublishedByUserId = publisherUserId;
+            snapshot.ConcurrencyVersion++;
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await NotifyAsync(
+                PortfolioSnapshotPersistenceStage.PublishBeforeCommit,
+                snapshot,
+                cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            return new PortfolioSnapshotPublishDto(
+                snapshot.Id,
+                snapshot.Status.ToString(),
+                snapshot.AsOfDate,
+                snapshot.PublishedAt.Value,
+                snapshot.PublishedByUserId.Value,
+                previous?.Id,
+                snapshot.SnapshotContentHash);
+        }
+        catch (PortfolioSnapshotWorkflowException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            _dbContext.ChangeTracker.Clear();
+            throw;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            _dbContext.ChangeTracker.Clear();
+            throw new PortfolioSnapshotWorkflowException(
+                "ConcurrentPublishDetected",
+                "Another publish changed snapshot governance state first; no changes from this request were committed.",
+                true);
+        }
+        catch (DbUpdateException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            _dbContext.ChangeTracker.Clear();
+            throw new PortfolioSnapshotWorkflowException(
+                "PublishConflict",
+                "The database rejected a conflicting publish; no changes from this request were committed.",
+                true);
+        }
+        catch (DbException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            _dbContext.ChangeTracker.Clear();
+            throw PublishConflict();
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            _dbContext.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
     public async Task<PortfolioSnapshotReviewDto?> GetReviewAsync(
         int id,
         CancellationToken cancellationToken = default)
@@ -456,7 +659,7 @@ public sealed class PortfolioSnapshotWorkflowService : IPortfolioSnapshotWorkflo
                 IsReconciled(snapshot)));
     }
 
-    private static PortfolioSnapshotReviewDto MapReview(PortfolioSnapshot snapshot)
+    private PortfolioSnapshotReviewDto MapReview(PortfolioSnapshot snapshot)
     {
         var warningSummary = snapshot.Records
             .SelectMany(record => WarningCodes(record)
@@ -496,6 +699,7 @@ public sealed class PortfolioSnapshotWorkflowService : IPortfolioSnapshotWorkflo
             .OrderBy(group => group.Key, StringComparer.Ordinal)
             .Select(group => new PortfolioExclusionSummaryDto(group.Key, group.Count()))
             .ToArray();
+        var publishBlockedReasons = PublishBlockedReasons(snapshot);
         return new PortfolioSnapshotReviewDto(
             new PortfolioSnapshotMetadataDto(
                 snapshot.Id,
@@ -509,13 +713,47 @@ public sealed class PortfolioSnapshotWorkflowService : IPortfolioSnapshotWorkflo
                 snapshot.CreatedAt,
                 snapshot.ValidatedAt,
                 snapshot.RejectedAt,
-                snapshot.RejectionReason),
+                snapshot.RejectionReason,
+                snapshot.PublishedAt,
+                snapshot.PublishedByUserId,
+                snapshot.SupersededAt,
+                snapshot.SupersededBySnapshotId),
             MapCounts(snapshot),
             MapFinancial(snapshot),
             warningSummary,
             unresolved,
             exclusions,
-            false);
+            _options.PublishingEnabled,
+            publishBlockedReasons.Count == 0,
+            publishBlockedReasons);
+    }
+
+    private IReadOnlyList<string> PublishBlockedReasons(PortfolioSnapshot snapshot)
+    {
+        var reasons = new List<string>();
+        if (!_options.PublishingEnabled)
+            reasons.Add("PublishingDisabled");
+
+        if (snapshot.Status != PortfolioSnapshotStatus.Validated)
+        {
+            reasons.Add(snapshot.Status == PortfolioSnapshotStatus.Published
+                ? "AlreadyPublished"
+                : "NotValidated");
+        }
+
+        if (snapshot.BlockingErrorCount != 0)
+            reasons.Add("BlockingErrors");
+
+        if (snapshot.Status == PortfolioSnapshotStatus.Validated)
+        {
+            var issues = ValidatePersistedSnapshot(snapshot);
+            if (issues.Any(x => x.Code == "PersistedSnapshotContentHashMismatch"))
+                reasons.Add("HashMismatch");
+            if (issues.Any(x => x.Code != "PersistedSnapshotContentHashMismatch"))
+                reasons.Add("IntegrityMismatch");
+        }
+
+        return reasons.Distinct(StringComparer.Ordinal).ToArray();
     }
 
     private static PortfolioSnapshotCountsDto MapCounts(PortfolioSnapshot snapshot) => new(
@@ -669,4 +907,11 @@ public sealed class PortfolioSnapshotWorkflowService : IPortfolioSnapshotWorkflo
     private static PortfolioSnapshotWorkflowException NotFound(int id) => new(
         "SnapshotNotFound",
         $"Portfolio Snapshot {id} was not found.");
+
+    private static PortfolioSnapshotWorkflowException PublishConflict() => new(
+        "PublishConflict",
+        "The database rejected a conflicting publish; no changes from this request were committed.",
+        true);
+
+    private sealed record PublishObservation(int Id, long ConcurrencyVersion);
 }

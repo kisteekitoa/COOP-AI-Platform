@@ -3,10 +3,12 @@ import { AlertTriangle, CheckCircle2, FileCheck2, LockKeyhole, XCircle } from "l
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import Card from "../components/ui/Card";
+import { useAuth } from "../auth/useAuth";
 import {
     createSnapshotDraft,
     getSnapshotReview,
     listSnapshots,
+    publishSnapshot,
     rejectSnapshot,
     snapshotApiError,
     validatePersistedDraft,
@@ -66,6 +68,7 @@ function CountsPanel({ counts }: { counts: SnapshotCounts }) {
 export default function PortfolioSnapshotsPage() {
     const { id } = useParams();
     const navigate = useNavigate();
+    const { user } = useAuth();
     const snapshotId = id ? Number(id) : null;
     const [file, setFile] = useState<File | null>(null);
     const [asOfDate, setAsOfDate] = useState("2026-06-30");
@@ -75,6 +78,7 @@ export default function PortfolioSnapshotsPage() {
     const [rejectionReason, setRejectionReason] = useState("");
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
+    const [showPublishConfirmation, setShowPublishConfirmation] = useState(false);
 
     const refreshList = useCallback(async () => {
         setSnapshots(await listSnapshots());
@@ -156,8 +160,23 @@ export default function PortfolioSnapshotsPage() {
         });
     }
 
+    function handlePublish() {
+        if (!review || busy)
+            return;
+        void run(async () => {
+            await publishSnapshot(
+                review.snapshot.id,
+                review.snapshot.snapshotContentHash,
+            );
+            setShowPublishConfirmation(false);
+            await refreshReview(review.snapshot.id);
+            await refreshList();
+        });
+    }
+
     const counts = review?.counts ?? validation?.counts;
     const financial = review?.financial ?? validation?.financial;
+    const isManager = user?.roles.includes("Manager") ?? false;
 
     return (
         <div className="space-y-6">
@@ -293,14 +312,49 @@ export default function PortfolioSnapshotsPage() {
                         </Card>
                     ) : null}
 
-                    <Card className="border-amber-300 bg-amber-50">
-                        <h2 className="flex items-center gap-2 text-xl font-semibold text-amber-900"><LockKeyhole size={20} /> การเผยแพร่</h2>
-                        <p className="mt-2 text-amber-800">ยังไม่ได้รับอนุญาตให้ Publish ใน Gate 2A และ Dashboard ยังไม่เปลี่ยนมาใช้ Snapshot</p>
-                        <button className="mt-3 cursor-not-allowed rounded-lg bg-slate-300 px-4 py-2 text-slate-600" type="button" disabled>
-                            Publish (ปิดใช้งาน)
-                        </button>
-                    </Card>
+                    {isManager ? (
+                        <Card className={review.canPublish ? "border-green-300 bg-green-50" : "border-amber-300 bg-amber-50"}>
+                            <h2 className="flex items-center gap-2 text-xl font-semibold"><LockKeyhole size={20} /> การอนุมัติ Published Snapshot</h2>
+                            <p className="mt-2 text-slate-700">Dashboard V1 ยังไม่ได้เปลี่ยนมาใช้ Snapshot ชุดนี้ การเชื่อมต่อ Dashboard จะดำเนินการในขั้นตอนถัดไป</p>
+                            {!review.canPublish ? <p className="mt-2 text-sm text-amber-800">ยังเผยแพร่ไม่ได้: {review.publishBlockedReasons.join(", ")}</p> : null}
+                            <button
+                                className="mt-3 rounded-lg bg-green-700 px-4 py-2 text-white disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600"
+                                type="button"
+                                disabled={busy || !review.canPublish}
+                                onClick={() => setShowPublishConfirmation(true)}
+                            >
+                                อนุมัติชุดข้อมูลนี้เป็น Published Snapshot
+                            </button>
+                        </Card>
+                    ) : null}
                 </>
+            ) : null}
+
+            {showPublishConfirmation && review ? (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4" role="dialog" aria-modal="true" aria-labelledby="publish-confirmation-title">
+                    <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-2xl">
+                        <h2 id="publish-confirmation-title" className="text-2xl font-bold text-slate-900">ยืนยันการอนุมัติ Published Snapshot</h2>
+                        <p className="mt-2 text-slate-600">โปรดตรวจสอบข้อมูลสรุปก่อนยืนยัน ระบบจะตรวจสอบข้อมูลที่บันทึกไว้อีกครั้งบนเซิร์ฟเวอร์</p>
+                        <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-2">
+                            <div><dt className="text-slate-500">วันที่ข้อมูล</dt><dd className="font-semibold">{review.snapshot.asOfDate}</dd></div>
+                            <div><dt className="text-slate-500">จำนวนสัญญา</dt><dd className="font-semibold">{countFormatter.format(review.counts.totalContracts)}</dd></div>
+                            <div><dt className="text-slate-500">Warning</dt><dd className="font-semibold">{countFormatter.format(review.counts.warningContracts)}</dd></div>
+                            <div><dt className="text-slate-500">สมาชิกที่ยังเชื่อมโยงไม่ได้</dt><dd className="font-semibold">{countFormatter.format(review.counts.unresolvedMemberContracts)}</dd></div>
+                            <div><dt className="text-slate-500">เงินต้นคงเหลือ</dt><dd className="font-semibold">{moneyFormatter.format(review.financial.principalOutstanding)} บาท</dd></div>
+                            <div><dt className="text-slate-500">ผลตอบแทนคงเหลือ</dt><dd className="font-semibold">{moneyFormatter.format(review.financial.profitOutstanding)} บาท</dd></div>
+                            <div className="sm:col-span-2"><dt className="text-slate-500">ยอดคงเหลือรวม</dt><dd className="text-lg font-bold">{moneyFormatter.format(review.financial.totalOutstanding)} บาท</dd></div>
+                        </dl>
+                        <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                            การยืนยันนี้อนุมัติชุดข้อมูลเป็น Published Snapshot เท่านั้น Dashboard V1 ยังไม่ใช้ข้อมูลชุดนี้ และจะเชื่อมต่อในขั้นตอน Dashboard V1.1 ภายหลัง
+                        </div>
+                        <div className="mt-6 flex flex-wrap justify-end gap-3">
+                            <button className="rounded-lg border border-slate-300 px-4 py-2" type="button" disabled={busy} onClick={() => setShowPublishConfirmation(false)}>ยกเลิก</button>
+                            <button className="rounded-lg bg-green-700 px-4 py-2 text-white disabled:opacity-50" type="button" disabled={busy} onClick={handlePublish}>
+                                {busy ? "กำลังเผยแพร่..." : "ยืนยัน Published Snapshot"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             ) : null}
 
             <Card>

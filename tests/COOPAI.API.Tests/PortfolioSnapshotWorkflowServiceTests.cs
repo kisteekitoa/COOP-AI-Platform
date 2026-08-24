@@ -310,11 +310,14 @@ public sealed class PortfolioSnapshotWorkflowServiceTests
     }
 
     [Fact]
-    public void PublishEndpoint_IsHardDisabledAndPerformsNoServiceCall()
+    public async Task PublishEndpoint_IsHardDisabledAndPerformsNoServiceCall()
     {
-        var controller = new PortfolioSnapshotsController(null!);
+        var controller = new PortfolioSnapshotsController(
+            null!,
+            null!,
+            Microsoft.Extensions.Options.Options.Create(new PortfolioSnapshotOptions()));
 
-        var result = controller.Publish(123);
+        var result = await controller.Publish(123, null, CancellationToken.None);
 
         var conflict = Assert.IsType<ConflictObjectResult>(result);
         Assert.Equal(409, conflict.StatusCode);

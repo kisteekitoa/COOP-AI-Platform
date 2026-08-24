@@ -17,7 +17,7 @@ interface AntiforgeryResponse {
     requestToken: string;
 }
 
-async function getAntiforgeryToken() {
+export async function getAntiforgeryToken() {
     const response = await authClient.get<AntiforgeryResponse>("/csrf");
     return response.data.requestToken;
 }

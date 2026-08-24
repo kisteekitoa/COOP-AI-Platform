@@ -82,6 +82,8 @@ builder.Services.AddScoped<IDashboardService, DashboardService>();
 
 // Portfolio Snapshot review workflow (publishing remains disabled)
 builder.Services.AddScoped<IPortfolioSnapshotSource, ExcelPortfolioSnapshotSource>();
+builder.Services.Configure<PortfolioSnapshotOptions>(
+    builder.Configuration.GetSection(PortfolioSnapshotOptions.SectionName));
 builder.Services.AddScoped<IPortfolioSnapshotWorkflowService, PortfolioSnapshotWorkflowService>();
 
 builder.Services.AddEndpointsApiExplorer();

@@ -1,3 +1,5 @@
+using COOPAI.API.Models.Auth;
+
 namespace COOPAI.API.Models.Portfolio;
 
 public sealed class PortfolioSnapshot
@@ -53,7 +55,14 @@ public sealed class PortfolioSnapshot
     public DateTime? ValidatedAt { get; set; }
     public DateTime? RejectedAt { get; set; }
     public string? RejectionReason { get; set; }
+    public DateTime? PublishedAt { get; set; }
+    public int? PublishedByUserId { get; set; }
+    public DateTime? SupersededAt { get; set; }
+    public int? SupersededBySnapshotId { get; set; }
+    public long ConcurrencyVersion { get; set; }
 
     public ICollection<PortfolioSnapshotRecord> Records { get; set; } = new List<PortfolioSnapshotRecord>();
     public ICollection<PortfolioSnapshotExclusion> Exclusions { get; set; } = new List<PortfolioSnapshotExclusion>();
+    public CoopUser? PublishedByUser { get; set; }
+    public PortfolioSnapshot? SupersededBySnapshot { get; set; }
 }

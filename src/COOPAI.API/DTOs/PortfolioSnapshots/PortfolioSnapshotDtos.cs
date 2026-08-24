@@ -20,6 +20,12 @@ public sealed class PortfolioSnapshotRejectRequest
     public string Reason { get; set; } = string.Empty;
 }
 
+public sealed class PortfolioSnapshotPublishRequest
+{
+    public string ExpectedSnapshotContentHash { get; set; } = string.Empty;
+    public bool Confirmed { get; set; }
+}
+
 public sealed record PortfolioSnapshotCountsDto(
     int SourceRows,
     int TotalContracts,
@@ -97,7 +103,11 @@ public sealed record PortfolioSnapshotMetadataDto(
     DateTime CreatedAt,
     DateTime? ValidatedAt,
     DateTime? RejectedAt,
-    string? RejectionReason);
+    string? RejectionReason,
+    DateTime? PublishedAt,
+    int? PublishedByUserId,
+    DateTime? SupersededAt,
+    int? SupersededBySnapshotId);
 
 public sealed record PortfolioWarningAffectedRecordDto(
     int SourceRowNumber,
@@ -134,7 +144,18 @@ public sealed record PortfolioSnapshotReviewDto(
     IReadOnlyList<PortfolioWarningSummaryDto> WarningSummary,
     IReadOnlyList<PortfolioUnresolvedMemberDto> UnresolvedMembers,
     IReadOnlyList<PortfolioExclusionSummaryDto> Exclusions,
-    bool PublishingEnabled);
+    bool PublishingEnabled,
+    bool CanPublish,
+    IReadOnlyList<string> PublishBlockedReasons);
+
+public sealed record PortfolioSnapshotPublishDto(
+    int Id,
+    string Status,
+    DateOnly AsOfDate,
+    DateTime PublishedAt,
+    int PublishedByUserId,
+    int? PreviousSupersededSnapshotId,
+    string SnapshotContentHash);
 
 public sealed record PortfolioSnapshotRecordDto(
     long Id,

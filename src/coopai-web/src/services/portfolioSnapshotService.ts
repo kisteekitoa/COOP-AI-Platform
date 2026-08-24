@@ -1,4 +1,5 @@
 import axios from "axios";
+import { getAntiforgeryToken } from "./authService";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5171";
 const SNAPSHOT_URL = `${API_BASE_URL}/api/portfolio-snapshots`;
@@ -75,6 +76,10 @@ export interface SnapshotReview {
         validatedAt: string | null;
         rejectedAt: string | null;
         rejectionReason: string | null;
+        publishedAt: string | null;
+        publishedByUserId: number | null;
+        supersededAt: string | null;
+        supersededBySnapshotId: number | null;
     };
     counts: SnapshotCounts;
     financial: SnapshotFinancial;
@@ -103,6 +108,18 @@ export interface SnapshotReview {
     }>;
     exclusions: Array<{ reasonCode: string; count: number }>;
     publishingEnabled: boolean;
+    canPublish: boolean;
+    publishBlockedReasons: string[];
+}
+
+export interface SnapshotPublishResult {
+    id: number;
+    status: string;
+    asOfDate: string;
+    publishedAt: string;
+    publishedByUserId: number;
+    previousSupersededSnapshotId: number | null;
+    snapshotContentHash: string;
 }
 
 export async function validateSnapshot(file: File, asOfDate: string) {
@@ -147,6 +164,19 @@ export async function validatePersistedDraft(id: number) {
 
 export async function rejectSnapshot(id: number, reason: string) {
     await axios.post(`${SNAPSHOT_URL}/${id}/reject`, { reason });
+}
+
+export async function publishSnapshot(id: number, expectedSnapshotContentHash: string) {
+    const requestToken = await getAntiforgeryToken();
+    const response = await axios.post<SnapshotPublishResult>(
+        `${SNAPSHOT_URL}/${id}/publish`,
+        { expectedSnapshotContentHash, confirmed: true },
+        {
+            withCredentials: true,
+            headers: { "X-CSRF-TOKEN": requestToken },
+        },
+    );
+    return response.data;
 }
 
 export function snapshotApiError(error: unknown) {

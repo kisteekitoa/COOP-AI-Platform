@@ -1,13 +1,20 @@
+using System.Security.Claims;
 using COOPAI.API.DTOs.PortfolioSnapshots;
+using COOPAI.API.Security;
 using COOPAI.API.Services.PortfolioSnapshots;
+using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace COOPAI.API.Controllers;
 
 [ApiController]
 [Route("api/portfolio-snapshots")]
 public sealed class PortfolioSnapshotsController(
-    IPortfolioSnapshotWorkflowService workflowService) : ControllerBase
+    IPortfolioSnapshotWorkflowService workflowService,
+    IAntiforgery antiforgery,
+    IOptions<PortfolioSnapshotOptions> snapshotOptions) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<PortfolioSnapshotListItemDto>>> List(
@@ -154,10 +161,59 @@ public sealed class PortfolioSnapshotsController(
     }
 
     [HttpPost("{id:int}/publish")]
-    public IActionResult Publish(int id) =>
-        Conflict(new PortfolioSnapshotErrorDto(
-            "PublishingDisabled",
-            $"Publishing Portfolio Snapshot {id} is disabled in Gate 2A and no data was changed."));
+    [Authorize(Policy = CoopPolicies.ManagerOnly)]
+    public async Task<IActionResult> Publish(
+        int id,
+        [FromBody] PortfolioSnapshotPublishRequest? request,
+        CancellationToken cancellationToken)
+    {
+        // Preserve the verified Gate 2B-1 disabled response. No state can change while disabled.
+        if (!snapshotOptions.Value.PublishingEnabled)
+        {
+            return Conflict(new PortfolioSnapshotErrorDto(
+                "PublishingDisabled",
+                $"Publishing Portfolio Snapshot {id} is disabled and no data was changed."));
+        }
+
+        try
+        {
+            await antiforgery.ValidateRequestAsync(HttpContext);
+        }
+        catch (AntiforgeryValidationException)
+        {
+            return BadRequest(new PortfolioSnapshotErrorDto(
+                "InvalidAntiforgeryToken",
+                "The publish confirmation request is missing or has an invalid antiforgery token."));
+        }
+
+        if (request is null || !request.Confirmed)
+        {
+            return BadRequest(new PortfolioSnapshotErrorDto(
+                "PublishConfirmationRequired",
+                "Explicit confirmation is required before publishing a Portfolio Snapshot."));
+        }
+
+        var userIdValue = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!int.TryParse(userIdValue, out var publisherUserId) || publisherUserId <= 0)
+        {
+            return Unauthorized(new PortfolioSnapshotErrorDto(
+                "PublisherIdentityUnavailable",
+                "The authenticated Manager identity could not be resolved safely."));
+        }
+
+        try
+        {
+            return Ok(await workflowService.PublishAsync(
+                id,
+                request.ExpectedSnapshotContentHash,
+                publisherUserId,
+                cancellationToken));
+        }
+        catch (PortfolioSnapshotWorkflowException exception)
+        {
+            return WorkflowError(exception);
+        }
+    }
 
     private IActionResult WorkflowError(PortfolioSnapshotWorkflowException exception)
     {
