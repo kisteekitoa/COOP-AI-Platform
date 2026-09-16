@@ -1,7 +1,16 @@
 namespace COOPAI.API.DTOs.Dashboard;
 
+public static class DashboardDataModes
+{
+    public const string Current = "CURRENT";
+    public const string Published = "PUBLISHED";
+}
+
 public sealed class DashboardSummaryDto
 {
+    public string Mode { get; set; } = DashboardDataModes.Current;
+    public bool Available { get; set; }
+    public string Message { get; set; } = string.Empty;
     public bool HasPublishedSnapshot { get; set; }
     public string? DataSource { get; set; }
     public int? SnapshotId { get; set; }
@@ -29,7 +38,48 @@ public sealed class DashboardSummaryDto
     public decimal? ProfitOutstanding { get; set; }
     public decimal? TotalOutstanding { get; set; }
     public decimal? ExpiredOutstandingBalance { get; set; }
+    public int? PublishedRecordCount { get; set; }
+    public DateOnly? DataThroughPeriod { get; set; }
+    public string? DebtSnapshotId { get; set; }
+    public string? SourceAFingerprint { get; set; }
+    public DateTime? SourceASnapshotPublishedAt { get; set; }
+    public string? InstallmentSnapshotId { get; set; }
+    public string? SourceBFingerprint { get; set; }
+    public DateTime? SourceBSnapshotPublishedAt { get; set; }
+    public DateTime? DebtLastSuccessfulSyncAt { get; set; }
+    public DateTime? InstallmentLastSuccessfulSyncAt { get; set; }
+    public bool IsStale { get; set; }
+    public string? FreshnessWarning { get; set; }
+    public decimal? AmountDue { get; set; }
+    public decimal? ActualPayment { get; set; }
+    public int? DownPaymentContracts { get; set; }
+    public decimal? DownPaymentAmount { get; set; }
+    public decimal? OpeningOutstanding { get; set; }
+    public decimal? IncreaseDuringPeriod { get; set; }
+    public decimal? EndingOutstanding { get; set; }
+    public DashboardWorkQueueSummaryDto? WorkQueue { get; set; }
+    public List<DashboardDebtBucketDto> DebtBuckets { get; set; } = [];
     public List<DashboardContractTypeDto> ContractTypes { get; set; } = [];
+}
+
+public sealed class DashboardWorkQueueSummaryDto
+{
+    public int AnalysisUniverseContracts { get; set; }
+    public int TotalQueueContracts { get; set; }
+    public int CollectionContracts { get; set; }
+    public int ReviewOnlyContracts { get; set; }
+    public int UrgentContracts { get; set; }
+    public int HighContracts { get; set; }
+    public int MediumContracts { get; set; }
+    public int ReviewContracts { get; set; }
+}
+
+public sealed class DashboardDebtBucketDto
+{
+    public string Bucket { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public int ContractCount { get; set; }
+    public decimal OutstandingAmount { get; set; }
 }
 
 public sealed class DashboardContractTypeDto

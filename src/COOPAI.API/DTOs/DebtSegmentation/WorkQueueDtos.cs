@@ -1,0 +1,102 @@
+namespace COOPAI.API.DTOs.DebtSegmentation;
+
+public sealed record WorkQueuePrioritySummaryDto(
+    string Priority,
+    int ContractCount,
+    decimal OutstandingAmount);
+
+public sealed record WorkQueueLongTermBucketDto(
+    string DebtBucket,
+    string DebtBucketLabel,
+    int ContractCount,
+    decimal OutstandingAmount);
+
+public sealed record WorkQueueOfficerSummaryDto(
+    string OfficerName,
+    int ContractCount,
+    decimal OutstandingAmount,
+    int UrgentContracts,
+    int HighContracts);
+
+public sealed record WorkQueueSummaryDto(
+    int AnalysisUniverseContracts,
+    int TotalQueueContracts,
+    int CollectionContracts,
+    decimal CollectionOutstanding,
+    int ReviewOnlyContracts,
+    decimal ReviewOnlyAmount,
+    IReadOnlyList<WorkQueuePrioritySummaryDto> Priorities,
+    int NoPaymentContracts,
+    int CurrentShortfallContracts,
+    decimal CurrentShortfallAmount,
+    int PriorArrearsContracts,
+    decimal PriorArrearsAmount,
+    int ExpiredOutstandingContracts,
+    decimal ExpiredOutstandingAmount,
+    IReadOnlyList<WorkQueueLongTermBucketDto> LongTermOverdue,
+    int UnclassifiedReviewContracts,
+    decimal UnclassifiedReviewAmount,
+    int UnknownPriorArrearsContracts,
+    int MissingDownPaymentEvidenceContracts,
+    decimal MissingDownPaymentEvidenceAmount,
+    int PaidOffCollectionContracts,
+    int NotDueFalseNoPaymentContracts,
+    int FullyCreditCoveredFalseNoPaymentContracts,
+    int AssignedContracts,
+    int UnassignedContracts,
+    int ConflictContracts,
+    IReadOnlyList<WorkQueueOfficerSummaryDto> Officers);
+
+public sealed record WorkQueueItemDto(
+    string ContractNo,
+    string? MemberNo,
+    string? MemberName,
+    string? GroupCode,
+    string? OfficerName,
+    string AssignmentStatus,
+    string AssignmentRule,
+    IReadOnlyList<string> OfficerCandidates,
+    string ContractStatus,
+    string DebtBucket,
+    string DebtBucketLabel,
+    int? CurrentDelinquencyMonths,
+    string CurrentDelinquencyLabel,
+    int? ExpiredAgeMonths,
+    string? ExpiredAgeLabel,
+    int? RemainingOrOverdueMonths,
+    string RemainingOrOverdueLabel,
+    decimal OpeningOutstanding,
+    decimal EndingOutstanding,
+    decimal? MonthlyInstallment,
+    decimal? AmountDue,
+    decimal ActualPayment,
+    decimal? KnownPriorArrears,
+    string PriorArrearsStatus,
+    decimal PriorAdvanceCredit,
+    decimal AdvanceCreditApplied,
+    decimal EndingAdvanceCredit,
+    decimal PaymentToPriorArrears,
+    decimal PaymentToCurrentDue,
+    decimal? CurrentShortfall,
+    decimal UnclassifiedAmount,
+    string QueueType,
+    string Priority,
+    int PrioritySortOrder,
+    IReadOnlyList<string> ReasonCodes,
+    IReadOnlyList<string> ReasonLabelsThai,
+    string PrimaryReason,
+    IReadOnlyList<string> DataQualityWarnings);
+
+public sealed record WorkQueuePageDto(
+    bool Available,
+    string Message,
+    string? AnalysisId,
+    string? DebtSnapshotId,
+    string? InstallmentSnapshotId,
+    DateOnly CurrentPeriod,
+    WorkQueueSummaryDto? Summary,
+    int Page,
+    int PageSize,
+    int TotalCount,
+    IReadOnlyList<WorkQueueItemDto> Items,
+    DateTime? GeneratedAtUtc);

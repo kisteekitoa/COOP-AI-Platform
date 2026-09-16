@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using COOPAI.API.Data;
 using COOPAI.API.DTOs.Auth;
+using COOPAI.API.DTOs.Dashboard;
 using COOPAI.API.Models.Auth;
 using COOPAI.API.Models.Import;
 using COOPAI.API.Security;
@@ -48,7 +49,13 @@ public sealed class P0SecurityHardeningTests
             var password = NewPassword();
             await app.CreateUserAsync($"dashboard.{role}", password, role);
             Assert.Equal(HttpStatusCode.OK, (await app.LoginAsync(client, $"dashboard.{role}", password)).StatusCode);
-            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/dashboard/summary")).StatusCode);
+            var response = await client.GetAsync("/api/dashboard/summary");
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var dashboard = await response.Content.ReadFromJsonAsync<DashboardSummaryDto>();
+            Assert.NotNull(dashboard);
+            Assert.Equal(DashboardDataModes.Current, dashboard.Mode);
+            Assert.True(dashboard.Available, dashboard.Message);
+            Assert.Equal(4_600, dashboard.TotalContracts);
         }
     }
 
@@ -382,6 +389,8 @@ public sealed class P0SecurityHardeningTests
                 configuration.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["Authentication:SecurityStampValidationMinutes"] = "0",
+                    ["DebtSegmentationPreview:AutoSyncEnabled"] = "false",
+                    ["InstallmentMasterPreview:AutoSyncEnabled"] = "false",
                     ["ImportUpload:TempDirectory"] = _tempRoot,
                     ["ImportUpload:MaxUploadBytes"] = _maxUploadBytes.ToString(),
                     ["PortfolioSnapshots:PublishingEnabled"] = _publishingEnabled.ToString()

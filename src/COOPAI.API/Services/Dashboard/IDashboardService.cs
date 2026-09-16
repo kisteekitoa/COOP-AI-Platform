@@ -4,5 +4,7 @@ namespace COOPAI.API.Services.Dashboard;
 
 public interface IDashboardService
 {
-    Task<DashboardSummaryDto> GetSummaryAsync(CancellationToken cancellationToken = default);
+    Task<DashboardSummaryDto> GetSummaryAsync(
+        string? mode = null,
+        CancellationToken cancellationToken = default);
 }

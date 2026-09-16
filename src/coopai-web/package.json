@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "test": "node --test src/utils/remainingDuration.test.ts src/utils/monthlyContractTable.test.ts src/utils/workQueueTable.test.ts src/utils/managerPresentation.test.ts src/utils/dashboardMode.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {

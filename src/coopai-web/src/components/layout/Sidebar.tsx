@@ -10,7 +10,8 @@ import {
     Settings,
     ClipboardCheck,
     LogOut,
-    UserRound
+    UserRound,
+    ListTree
 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -25,6 +26,7 @@ const menus = [
     { icon: ShieldCheck, title: "ผู้ค้ำประกัน", path: "/guarantors" },
     { icon: FileSpreadsheet, title: "Import Excel", path: "/import" },
     { icon: ClipboardCheck, title: "ตรวจทาน Snapshot", path: "/portfolio-snapshots" },
+    { icon: ListTree, title: "รายการแยกหนี้", path: "/debt-segmentation", managerOnly: true },
     { icon: BarChart3, title: "รายงาน", path: "/reports" },
     { icon: Bot, title: "AI Assistant", path: "/assistant" },
     { icon: Settings, title: "ตั้งค่า", path: "/settings" },
@@ -62,7 +64,7 @@ export default function Sidebar() {
 
             <nav className="flex flex-1 gap-1 overflow-x-auto p-2 lg:mt-3 lg:flex-col lg:overflow-visible lg:p-0">
 
-                {menus.map((item) => {
+                {menus.filter((item) => !item.managerOnly || user?.roles.includes("Manager")).map((item) => {
 
                     const Icon = item.icon;
 

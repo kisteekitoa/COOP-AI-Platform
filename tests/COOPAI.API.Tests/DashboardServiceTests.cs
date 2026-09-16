@@ -1,4 +1,5 @@
 using COOPAI.API.Data;
+using COOPAI.API.DTOs.Dashboard;
 using COOPAI.API.Models;
 using COOPAI.API.Models.Portfolio;
 using COOPAI.API.Services.Dashboard;
@@ -68,7 +69,7 @@ public sealed class DashboardServiceTests
         await using var database = await DashboardDatabase.CreateAsync();
         await using var context = database.CreateContext();
 
-        var summary = await new DashboardService(context).GetSummaryAsync();
+        var summary = await new DashboardService(context).GetSummaryAsync(DashboardDataModes.Published);
 
         Assert.False(summary.HasPublishedSnapshot);
         Assert.Null(summary.DataSource);
@@ -91,7 +92,7 @@ public sealed class DashboardServiceTests
         await database.SeedSnapshotAsync(status, "A");
         await using var context = database.CreateContext();
 
-        var summary = await new DashboardService(context).GetSummaryAsync();
+        var summary = await new DashboardService(context).GetSummaryAsync(DashboardDataModes.Published);
 
         Assert.False(summary.HasPublishedSnapshot);
         Assert.Null(summary.TotalContracts);
@@ -114,7 +115,7 @@ public sealed class DashboardServiceTests
             ]);
         await using var context = database.CreateContext();
 
-        var summary = await new DashboardService(context).GetSummaryAsync();
+        var summary = await new DashboardService(context).GetSummaryAsync(DashboardDataModes.Published);
 
         Assert.True(summary.HasPublishedSnapshot);
         Assert.Equal(DashboardService.PublishedSnapshotDataSource, summary.DataSource);
@@ -161,7 +162,7 @@ public sealed class DashboardServiceTests
             totalContracts: 4_454);
         await using var context = database.CreateContext();
 
-        var summary = await new DashboardService(context).GetSummaryAsync();
+        var summary = await new DashboardService(context).GetSummaryAsync(DashboardDataModes.Published);
 
         Assert.True(summary.HasPublishedSnapshot);
         Assert.Equal(publishedId, summary.SnapshotId);
@@ -200,13 +201,13 @@ public sealed class DashboardServiceTests
             await setup.SaveChangesAsync();
         }
         await using var noPublishedContext = database.CreateContext();
-        var noPublished = await new DashboardService(noPublishedContext).GetSummaryAsync();
+        var noPublished = await new DashboardService(noPublishedContext).GetSummaryAsync(DashboardDataModes.Published);
         Assert.False(noPublished.HasPublishedSnapshot);
         Assert.Null(noPublished.PrincipalOutstanding);
 
         await database.SeedSnapshotAsync(PortfolioSnapshotStatus.Published, "E");
         await using var publishedContext = database.CreateContext();
-        var published = await new DashboardService(publishedContext).GetSummaryAsync();
+        var published = await new DashboardService(publishedContext).GetSummaryAsync(DashboardDataModes.Published);
 
         Assert.Equal(219_547_383.55m, published.PrincipalOutstanding);
         Assert.Equal(304_616_221m, published.TotalOutstanding);
@@ -237,7 +238,7 @@ public sealed class DashboardServiceTests
             ]);
         await using var context = database.CreateContext();
 
-        var summary = await new DashboardService(context).GetSummaryAsync();
+        var summary = await new DashboardService(context).GetSummaryAsync(DashboardDataModes.Published);
 
         Assert.Equal(3, summary.ContractTypes.Count);
         var general = Assert.Single(summary.ContractTypes, type => type.Prefix == "สม");
@@ -274,7 +275,7 @@ public sealed class DashboardServiceTests
         await using var context = database.CreateContext();
         var before = await GovernanceAsync(context, id);
 
-        _ = await new DashboardService(context).GetSummaryAsync();
+        _ = await new DashboardService(context).GetSummaryAsync(DashboardDataModes.Published);
         var after = await GovernanceAsync(context, id);
 
         Assert.Equal(before, after);

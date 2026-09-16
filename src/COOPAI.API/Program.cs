@@ -3,6 +3,7 @@ using COOPAI.API.Models.Auth;
 using COOPAI.API.Security;
 using COOPAI.API.Services.Auth;
 using COOPAI.API.Services.Dashboard;
+using COOPAI.API.Services.DebtSegmentation;
 using COOPAI.API.Services.Import;
 using COOPAI.API.Services.PortfolioSnapshots;
 using Microsoft.AspNetCore.Http;
@@ -131,6 +132,47 @@ builder.Services.Configure<FormOptions>(options =>
 // Dashboard
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IBootstrapUserService, BootstrapUserService>();
+
+// Read-only Manager rehearsal. It reads only the configured controlled workbook.
+builder.Services.Configure<DebtSegmentationPreviewOptions>(
+    builder.Configuration.GetSection(DebtSegmentationPreviewOptions.SectionName));
+builder.Services.AddSingleton<PreviewSyncGate>();
+builder.Services.AddSingleton<OperationalDebtWorkbookReader>();
+builder.Services.AddSingleton<IDebtSegmentationPolicy, DebtSegmentationPolicyV1>();
+builder.Services.AddSingleton<DebtSegmentationAnalyzer>();
+builder.Services.AddSingleton<IDebtWorkbookLocator, DebtWorkbookLocator>();
+builder.Services.AddSingleton<IDebtWorkbookAcquirer, DebtWorkbookAcquirer>();
+builder.Services.AddSingleton<IDebtSnapshotStore, FileDebtSnapshotStore>();
+builder.Services.AddSingleton<DebtSegmentationPreviewService>();
+builder.Services.AddSingleton<IDebtSegmentationPreviewService>(serviceProvider =>
+    serviceProvider.GetRequiredService<DebtSegmentationPreviewService>());
+builder.Services.AddSingleton<IDebtAutoSyncPipeline>(serviceProvider =>
+    serviceProvider.GetRequiredService<DebtSegmentationPreviewService>());
+builder.Services.AddSingleton<IDebtAutoSyncSourceProbe, DebtAutoSyncSourceProbe>();
+builder.Services.AddSingleton<DebtAutoSyncCoordinator>();
+builder.Services.AddSingleton<IDebtAutoSyncStatus>(serviceProvider =>
+    serviceProvider.GetRequiredService<DebtAutoSyncCoordinator>());
+builder.Services.AddHostedService(serviceProvider =>
+    serviceProvider.GetRequiredService<DebtAutoSyncCoordinator>());
+builder.Services.Configure<InstallmentMasterOptions>(
+    builder.Configuration.GetSection(InstallmentMasterOptions.SectionName));
+builder.Services.AddSingleton<InstallmentMasterWorkbookReader>();
+builder.Services.AddSingleton<IInstallmentMasterWorkbookAcquirer, InstallmentMasterWorkbookAcquirer>();
+builder.Services.AddSingleton<IInstallmentMasterSnapshotStore, FileInstallmentMasterSnapshotStore>();
+builder.Services.AddSingleton<InstallmentMasterSyncService>();
+builder.Services.AddSingleton<IInstallmentMasterSyncService>(serviceProvider =>
+    serviceProvider.GetRequiredService<InstallmentMasterSyncService>());
+builder.Services.AddSingleton<IInstallmentMasterSyncPipeline>(serviceProvider =>
+    serviceProvider.GetRequiredService<InstallmentMasterSyncService>());
+builder.Services.AddSingleton<IInstallmentMasterAutoSyncSourceProbe, InstallmentMasterAutoSyncSourceProbe>();
+builder.Services.AddSingleton<InstallmentMasterAutoSyncCoordinator>();
+builder.Services.AddSingleton<IInstallmentMasterAutoSyncStatus>(serviceProvider =>
+    serviceProvider.GetRequiredService<InstallmentMasterAutoSyncCoordinator>());
+builder.Services.AddHostedService(serviceProvider =>
+    serviceProvider.GetRequiredService<InstallmentMasterAutoSyncCoordinator>());
+builder.Services.AddSingleton<IMonthlyAmountDueService, MonthlyAmountDueService>();
+builder.Services.AddSingleton<IMonthlyPerformanceTrendService, MonthlyPerformanceTrendService>();
+builder.Services.AddSingleton<IWorkQueueService, WorkQueueService>();
 
 // Portfolio Snapshot review workflow (publishing remains disabled)
 builder.Services.AddScoped<IPortfolioSnapshotSource, ExcelPortfolioSnapshotSource>();

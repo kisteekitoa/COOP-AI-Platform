@@ -20,9 +20,17 @@ public class DashboardController : ControllerBase
 
     [HttpGet("summary")]
     public async Task<ActionResult<DashboardSummaryDto>> GetSummary(
+        [FromQuery] string? mode,
         CancellationToken cancellationToken)
     {
-        var summary = await _dashboardService.GetSummaryAsync(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(mode) &&
+            !string.Equals(mode, DashboardDataModes.Current, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(mode, DashboardDataModes.Published, StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest(new { message = "Dashboard mode must be CURRENT or PUBLISHED." });
+        }
+
+        var summary = await _dashboardService.GetSummaryAsync(mode, cancellationToken);
         return Ok(summary);
     }
 }

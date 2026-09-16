@@ -5,7 +5,7 @@ namespace COOPAI.API.DTOs.PortfolioSnapshots;
 public class PortfolioSnapshotValidateRequest
 {
     public IFormFile? File { get; set; }
-    public DateOnly AsOfDate { get; set; }
+    public string? AsOfDate { get; set; }
     public int? DefinitionVersion { get; set; }
 }
 

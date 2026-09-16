@@ -49,6 +49,12 @@ The project follows a structured stage-gate development process:
 - Gate 08 — Project Structure
 - Gate 09 — Development
 
+## Start locally on Windows
+
+Right-click `START-COOP-AI.ps1` and choose **Run with PowerShell as Administrator**. It safely starts or reuses the local rehearsal SQL service, API, and frontend, then opens the login page.
+
+See [docs/start-coopai.md](docs/start-coopai.md) for startup status, manual shutdown, and port-conflict instructions.
+
 ## Technology Stack
 
 The platform is expected to be implemented using a modern enterprise technology stack, including:

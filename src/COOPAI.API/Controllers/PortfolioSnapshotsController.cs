@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using COOPAI.API.DTOs.PortfolioSnapshots;
 using COOPAI.API.Security;
@@ -34,9 +35,12 @@ public sealed class PortfolioSnapshotsController(
         var antiforgeryError = await ValidateAntiforgeryAsync();
         if (antiforgeryError is not null)
             return antiforgeryError;
-        var requestError = ValidateUpload(request.File, request.AsOfDate);
+        var requestError = ValidateUpload(request.File);
         if (requestError is not null)
             return BadRequest(requestError);
+        var dateError = ParseAsOfDate(request.AsOfDate, out var asOfDate);
+        if (dateError is not null)
+            return BadRequest(dateError);
 
         var tempPath = await CopyToControlledTempAsync(request.File!, cancellationToken);
         try
@@ -44,7 +48,7 @@ public sealed class PortfolioSnapshotsController(
             return Ok(await workflowService.ValidateAsync(
                 tempPath,
                 request.File!.FileName,
-                request.AsOfDate,
+                asOfDate,
                 request.DefinitionVersion,
                 cancellationToken));
         }
@@ -69,9 +73,12 @@ public sealed class PortfolioSnapshotsController(
         var antiforgeryError = await ValidateAntiforgeryAsync();
         if (antiforgeryError is not null)
             return antiforgeryError;
-        var requestError = ValidateUpload(request.File, request.AsOfDate);
+        var requestError = ValidateUpload(request.File);
         if (requestError is not null)
             return BadRequest(requestError);
+        var dateError = ParseAsOfDate(request.AsOfDate, out var asOfDate);
+        if (dateError is not null)
+            return BadRequest(dateError);
 
         var tempPath = await CopyToControlledTempAsync(request.File!, cancellationToken);
         try
@@ -79,7 +86,7 @@ public sealed class PortfolioSnapshotsController(
             var result = await workflowService.CreateDraftAsync(
                 tempPath,
                 request.File!.FileName,
-                request.AsOfDate,
+                asOfDate,
                 request.ExpectedSourceFileHash,
                 request.ExpectedSnapshotContentHash,
                 request.DefinitionVersion,
@@ -256,14 +263,35 @@ public sealed class PortfolioSnapshotsController(
                 "The request is missing or has an invalid antiforgery token."))
             : null;
 
-    private static PortfolioSnapshotErrorDto? ValidateUpload(IFormFile? file, DateOnly asOfDate)
+    private static PortfolioSnapshotErrorDto? ValidateUpload(IFormFile? file)
     {
         if (file is null || file.Length == 0)
             return new PortfolioSnapshotErrorDto("FileRequired", "A non-empty .xlsx file is required.");
         if (!string.Equals(Path.GetExtension(file.FileName), ".xlsx", StringComparison.OrdinalIgnoreCase))
             return new PortfolioSnapshotErrorDto("UnsupportedFileType", "Only .xlsx files are supported.");
-        if (asOfDate == default)
+        return null;
+    }
+
+    private static PortfolioSnapshotErrorDto? ParseAsOfDate(string? value, out DateOnly asOfDate)
+    {
+        asOfDate = default;
+        if (string.IsNullOrWhiteSpace(value))
             return new PortfolioSnapshotErrorDto("AsOfDateRequired", "AsOfDate is required.");
+
+        if (!DateOnly.TryParseExact(
+                value,
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out asOfDate) ||
+            asOfDate > DateOnly.FromDateTime(DateTime.UtcNow))
+        {
+            asOfDate = default;
+            return new PortfolioSnapshotErrorDto(
+                "InvalidAsOfDate",
+                "AsOfDate must use the exact Gregorian yyyy-MM-dd format and cannot be in the future.");
+        }
+
         return null;
     }
 

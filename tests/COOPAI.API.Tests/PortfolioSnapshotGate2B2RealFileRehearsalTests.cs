@@ -1,5 +1,6 @@
 using System.Text;
 using COOPAI.API.Data;
+using COOPAI.API.DTOs.Dashboard;
 using COOPAI.API.Models;
 using COOPAI.API.Models.Auth;
 using COOPAI.API.Models.Portfolio;
@@ -126,7 +127,7 @@ public sealed class PortfolioSnapshotGate2B2RealFileRehearsalTests(ITestOutputHe
         Assert.Equal("Published", firstPublish.Status);
         Assert.Null(firstPublish.PreviousSupersededSnapshotId);
 
-        var dashboard = await new DashboardService(isolated).GetSummaryAsync();
+        var dashboard = await new DashboardService(isolated).GetSummaryAsync(DashboardDataModes.Published);
         Assert.True(dashboard.HasPublishedSnapshot);
         Assert.Equal(draft.Id, dashboard.SnapshotId);
         Assert.Equal(baseline.AsOfDate, dashboard.AsOfDate);
